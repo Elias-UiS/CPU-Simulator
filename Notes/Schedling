@@ -1,0 +1,12 @@
+Metrics:
+Tturnaround = Tcompletion − Tarrival
+Tresponse = Tf irstrun − Tarrival
+Fairness
+
+
+First In, First Out (FIFO)
+Shortest Job First (SJF)
+Shortest Time-to-Completion First (STCF)
+Round Robin (RR)
+Multi-level feedback queue (MLFQ) | Won't implement this I think 
+Proportional-share / fair-share / lottery

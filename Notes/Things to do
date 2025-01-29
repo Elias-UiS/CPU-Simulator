@@ -1,0 +1,28 @@
+Scheduling: Velg noen?
+    First In, First Out (FIFO)
+    Shortest Job First (SJF)
+    Shortest Time-to-Completion First (STCF)
+    Round Robin (RR)
+    Multi-level feedback queue (MLFQ) | Won't implement this I think 
+    Proportional-share / fair-share / lottery
+
+MMU: Velg en
+    Base and Limit Registers, 
+    Segmentation,
+    Paging
+
+CPU:
+    Fetch
+    Decode
+    Execute
+    Context switch
+
+Canonical I/O device?
+
+Bruke fyne GUI
+Kan se hvilke verdier som er lagret osv.
+Kan se metrics
+
+
+
+

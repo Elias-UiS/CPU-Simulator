@@ -1,6 +1,10 @@
 package cpu
 
-import "fmt"
+import (
+	"CPU-Simulator/simulator/pkg/settings"
+	"fmt"
+	"time"
+)
 
 // Instruction Opcodes
 const (
@@ -95,11 +99,16 @@ func getOpcodeName(opcode int) string {
 
 // Instructions
 func add(cpu *CPU) {
+	var oldAcc int = cpu.Registers.AC
 	cpu.Registers.AC += cpu.Registers.MDR.Data
+	fmt.Printf("Prev ACC: %d + Data: %d = New ACC: %d \n", oldAcc, cpu.Registers.MDR.Data, cpu.Registers.AC)
 }
 
 func sub(cpu *CPU) {
+	var oldAcc int = cpu.Registers.AC
 	cpu.Registers.AC -= cpu.Registers.MDR.Data
+	fmt.Printf("Prev ACC: %d - Data: %d = New ACC: %d \n", oldAcc, cpu.Registers.MDR.Data, cpu.Registers.AC)
+
 }
 
 func print(cpu *CPU) {
@@ -127,27 +136,31 @@ func NewCPU() *CPU {
 }
 
 // Run executes the CPU simulation.
-func Run() {
-	// Simulated memory containing instructions
+func Run(cpu *CPU) {
+	cpu.Memory[0] = 100
+	cpu.Memory[1] = 10
+	cpu.Memory[2] = 20
+	cpu.Memory[3] = 5
+
 	var instructions []Instruction = []Instruction{
 		{Opcode: ADD, Operand: 1},
-		{Opcode: PRINT},
 		{Opcode: ADD, Operand: 2},
-		{Opcode: PRINT},
 		{Opcode: SUB, Operand: 3},
-		{Opcode: PRINT},
 	}
-
-	cpu := NewCPU()
 	cpu.InstructionList = instructions
 
-	cpu.Memory[0] = 100
-	cpu.Memory[1] = 1
-	cpu.Memory[2] = 2
-	cpu.Memory[3] = 3
-	for cpu.Registers.PC < len(instructions) {
-		cpu.fetch()
-		cpu.decode()
-		cpu.execute()
+	for i := 0; i < 100; i++ {
+		// Simulated memory containing instructions
+
+		for cpu.Registers.PC < len(instructions) {
+			cpu.fetch()
+			cpu.decode()
+			cpu.execute()
+			time.Sleep(time.Second * time.Duration(settings.UpdateTimer))
+		}
+		cpu.Registers.PC = 0
+		fmt.Println("New loop")
+
 	}
+
 }
