@@ -1,9 +1,8 @@
 package cpu
 
 import (
-	"CPU-Simulator/simulator/pkg/settings"
+	"CPU-Simulator/simulator/pkg/memory"
 	"fmt"
-	"time"
 )
 
 // Instruction Opcodes
@@ -25,6 +24,7 @@ var opcodeNames = map[int]string{
 
 // Instruction represents a single CPU instruction.
 type Instruction struct {
+	OpType  int // 0: Direct, 1: Access memory
 	Opcode  int // Operation code
 	Operand int // Address in Memory
 
@@ -54,12 +54,10 @@ type Registers struct {
 }
 
 type CPU struct {
-	Registers       Registers
-	Instructions    Instruction
-	Memory          [1024]int
-	Cache           [16]int
-	InstructionList []Instruction
-	opcodes         map[int]func(*CPU) // Map opcode to a handler function
+	Registers Registers
+	opcodes   map[int]func(*CPU) // Map opcode to a handler function
+	mmu       *memory.MMU
+	pcb       *memory.PCB
 }
 
 // Register a new opcode
@@ -68,22 +66,51 @@ func (cpu *CPU) registerOpcode(opcode int, handler func(*CPU)) {
 }
 
 func (cpu *CPU) fetch() {
-	cpu.Registers.MAR = cpu.Registers.PC
-	var mdr MDR = MDR{IsInstruction: true, Instruction: cpu.InstructionList[cpu.Registers.MAR]}
+	physicalAddr, err := cpu.mmu.TranslateAddress(uint32(cpu.Registers.PC))
+	if physicalAddr == -1 {
+		fmt.Println(err)
+	}
+	cpu.Registers.MAR = physicalAddr
+	typeAndOpcode, err := cpu.mmu.Read(uint32(cpu.Registers.MAR))
+	if physicalAddr == -1 {
+		fmt.Println(err)
+	}
+	instructionType := (typeAndOpcode >> 7) & 0x1 // Extract the first bit
+	opcode := typeAndOpcode & 0x7F                // Extract the last 7 bits
+
+	operand, err := cpu.mmu.Read(uint32(cpu.Registers.MAR + 1))
+	if physicalAddr == -1 {
+		fmt.Println(err)
+	}
+	instruction := Instruction{instructionType, opcode, operand}
+	var mdr MDR = MDR{IsInstruction: true, Instruction: instruction}
 	cpu.Registers.MDR = mdr
 	if cpu.Registers.MDR.IsInstruction {
 		cpu.Registers.IR = cpu.Registers.MDR.Instruction
 	}
-	cpu.Registers.PC += 1
+	cpu.Registers.PC += 2
 }
 
 func (cpu *CPU) decode() {
-	cpu.Registers.MAR = cpu.Registers.IR.Operand
-	var mdr MDR = MDR{IsInstruction: false, Data: cpu.Memory[cpu.Registers.MAR]}
-	cpu.Registers.MDR = mdr
+	if cpu.Registers.MDR.Instruction.OpType == 0 {
+		var mdr MDR = MDR{IsInstruction: false, Data: cpu.Registers.MDR.Instruction.Operand}
+		cpu.Registers.MDR = mdr
+	} else {
+		cpu.Registers.MAR = cpu.Registers.IR.Operand
+	}
+
 }
 
 func (cpu *CPU) execute() {
+	if cpu.Registers.MDR.IsInstruction {
+		value, err := cpu.mmu.Read(uint32(cpu.Registers.MAR))
+		if err != nil {
+			fmt.Println(err)
+		}
+		var mdr MDR = MDR{IsInstruction: false, Data: value}
+		cpu.Registers.MDR = mdr
+	}
+
 	var opcode int = cpu.Registers.IR.Opcode
 	if handler, exists := cpu.opcodes[opcode]; exists {
 		handler(cpu)
@@ -137,30 +164,31 @@ func NewCPU() *CPU {
 
 // Run executes the CPU simulation.
 func Run(cpu *CPU) {
-	cpu.Memory[0] = 100
-	cpu.Memory[1] = 10
-	cpu.Memory[2] = 20
-	cpu.Memory[3] = 5
 
-	var instructions []Instruction = []Instruction{
-		{Opcode: ADD, Operand: 1},
-		{Opcode: ADD, Operand: 2},
-		{Opcode: SUB, Operand: 3},
-	}
-	cpu.InstructionList = instructions
+	// cpu.Memory[0] = 100
+	// cpu.Memory[1] = 10
+	// cpu.Memory[2] = 20
+	// cpu.Memory[3] = 5
 
-	for i := 0; i < 100; i++ {
-		// Simulated memory containing instructions
+	// var instructions []Instruction = []Instruction{
+	// 	{Opcode: ADD, Operand: 1},
+	// 	{Opcode: ADD, Operand: 2},
+	// 	{Opcode: SUB, Operand: 3},
+	// }
+	// cpu.InstructionList = instructions
 
-		for cpu.Registers.PC < len(instructions) {
-			cpu.fetch()
-			cpu.decode()
-			cpu.execute()
-			time.Sleep(time.Second * time.Duration(settings.UpdateTimer))
-		}
-		cpu.Registers.PC = 0
-		fmt.Println("New loop")
+	// for i := 0; i < 100; i++ {
+	// 	// Simulated memory containing instructions
 
-	}
+	// 	for cpu.Registers.PC < len(instructions) {
+	// 		cpu.fetch()
+	// 		cpu.decode()
+	// 		cpu.execute()
+	// 		time.Sleep(time.Second * time.Duration(settings.UpdateTimer))
+	// 	}
+	// 	cpu.Registers.PC = 0
+	// 	fmt.Println("New loop")
+
+	// }
 
 }
