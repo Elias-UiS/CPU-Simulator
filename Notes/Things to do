@@ -26,3 +26,23 @@ Kan se metrics
 
 
 
+Mulighet til å legge til en tekst fil eller tilsvarende, 
+med kommandoer som blir til en process.
+
+2 forskjellge.
+En til direkte, og en til addressering.
+
+Endre på hvordan en process spør om plass?
+Den må spørre om bytes, 
+siden den ikke trenger å vite hvor mange pages den trenger.
+Dermed kan jeg lage en enklere "minne" bytte modul.
+
+
+- Mulig jeg kan lage noen constanter for addresser?
+    F.eks kan x = 1024, y = 50.
+    Slik kan brukeren skrive x som addresse, for en enklere bruker opplevelse?
+
+
+Til i morgen:
+Fortsett med process.go
+Få til en måte å se minne på, og starte den prossesn.

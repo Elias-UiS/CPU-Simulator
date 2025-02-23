@@ -1,22 +1,39 @@
 package memory
 
-const (
-	PageSize   = 128                  // size of each page
-	NumFrames  = 8                    // number of frames(pages) in physical memory
-	MemorySize = PageSize * NumFrames // Total physical memory size
+import (
+	"CPU-Simulator/simulator/pkg/logger"
+	"CPU-Simulator/simulator/pkg/settings"
 )
 
 type Memory struct {
-	Frames [][]byte // Represents physical memory
+	Frames [][]uint32 // Represents physical memory
 }
 
+var physicalMemory *Memory
+
 func NewMemory() *Memory {
-	frame := make([][]byte, NumFrames)
+	logger.Log.Println("INFO: physicalMemory NewMemory()")
+	frame := make([][]uint32, settings.NumFrames)
 	for i := range frame {
-		frame[i] = make([]byte, PageSize)
+		frame[i] = make([]uint32, settings.PageSize)
 	}
 
-	return &Memory{
+	physicalMemory = &Memory{
 		Frames: frame,
 	}
+
+	return physicalMemory
+
+}
+
+func GetMemory() *Memory {
+	logger.Log.Println("INFO: GetMemory called.")
+
+	if physicalMemory == nil {
+		logger.Log.Println("INFO: physicalMemory is nil. Initializing...")
+		return NewMemory() // Initializes physicalMemory
+	}
+
+	logger.Log.Println("INFO: physicalMemory already initialized.")
+	return physicalMemory
 }
