@@ -11,5 +11,6 @@ func main() {
 	defer fmt.Println("INFO: main() fmt defer")
 	logger.Init()
 	logger.Log.Println("INFO: main()")
-	dashboard.Dashboard()
+	dashboardStruct := dashboard.DashboardStruct{}
+	dashboard.Dashboard(&dashboardStruct)
 }

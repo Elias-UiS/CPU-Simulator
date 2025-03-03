@@ -1,7 +1,6 @@
 package dashboard
 
 import (
-	"CPU-Simulator/simulator/pkg/cpu"
 	"CPU-Simulator/simulator/pkg/logger"
 	"CPU-Simulator/simulator/pkg/os"
 	"CPU-Simulator/simulator/pkg/temp"
@@ -14,59 +13,35 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func load() {
-	fmt.Println("Test")
+type DashboardStruct struct {
+	IsRunnning bool
+	clock      int // In seconds
 }
 
-func run() {
-	fmt.Println("Test")
-}
+// func updateTime(clock *widget.Label, start time.Time) {
+// 	elapsed := time.Since(start)
+// 	elapsedStr := fmt.Sprintf("%02d:%02d:%02d",
+// 		int(elapsed.Hours())%24,
+// 		int(elapsed.Minutes())%60,
+// 		int(elapsed.Seconds())%60)
+// 	clock.SetText(elapsedStr)
+// }
 
-func next() {
-	fmt.Println("Test")
-}
-
-func pause() {
-	fmt.Println("Test")
-}
-
-func exit() {
-	fmt.Println("Test")
-}
-
-func updateTime(clock *widget.Label, start time.Time) {
-	elapsed := time.Since(start)
-	elapsedStr := fmt.Sprintf("%02d:%02d:%02d",
-		int(elapsed.Hours())%24,
-		int(elapsed.Minutes())%60,
-		int(elapsed.Seconds())%60)
-	clock.SetText(elapsedStr)
-}
-
-func startClock(clock *widget.Label, stopClockChan chan bool, cpuInstance *cpu.CPU, registerDisplayWidget *widget.Label) {
-	start := time.Now()
-	for range time.Tick(time.Second) {
-		select {
-		case <-stopClockChan:
-			fmt.Println("Clock Stopped.")
-			return
-		default:
-			updateTime(clock, start)
-			updateRegisterDisplay(cpuInstance, registerDisplayWidget)
+func (dash *DashboardStruct) startClock(clock *widget.Label) {
+	for {
+		time.Sleep(1000 * time.Millisecond)
+		if !dash.IsRunnning {
+			fmt.Println("Clock paused.")
+		} else {
+			dash.clock += 1
+			duration := time.Duration(dash.clock) * time.Second
+			timeStr := fmt.Sprintf("%02d:%02d:%02d", int(duration.Hours()), int(duration.Minutes())%60, int(duration.Seconds())%60)
+			clock.SetText(timeStr)
 		}
 	}
 }
 
-func updateRegisterDisplay(cpuInstance *cpu.CPU, registerDisplayWidget *widget.Label) {
-	registers := cpuInstance.Registers
-	displayText := fmt.Sprintf(
-		"AC: %d\nPC: %d\nMAR: %d\nMDR: %d\nIR_Opcode: %d\nIR_Operand: %d",
-		registers.AC, registers.PC, registers.MAR, registers.MDR.Data, registers.IR.Opcode, registers.IR.Operand,
-	)
-	registerDisplayWidget.SetText(displayText)
-}
-
-func Dashboard() {
+func Dashboard(dash *DashboardStruct) {
 	// Fyne app
 	logger.Log.Println("INFO: dashboard_Dashboard() - Starting Dashboard.")
 
@@ -115,34 +90,58 @@ func Dashboard() {
 	//var cpuInstance = os.CPU[0]
 
 	clock := widget.NewLabel("00:00:00")
-	status := widget.NewLabel("Stopped")
-
-	//stopClockChan := make(chan bool)
+	status := widget.NewLabel("Not Running")
 
 	startSimulationButton := widget.NewButton("Start", func() {
-		//go startClock(clock, stopClockChan, cpuInstance, registerDisplayWidget)
+		if dash.IsRunnning {
+			return
+		}
+		go dash.startClock(clock)
 		os.StartSimulation()
 		status.SetText("Running")
+		dash.IsRunnning = true
 	})
 
 	stopSimulationButton := widget.NewButton("Stop", func() {
+
 		//stopClockChan <- true
 		status.SetText("Stopped")
 	})
 
+	resumetSimulationButton := widget.NewButton("Resume", func() {
+		if dash.IsRunnning {
+			return
+		}
+		go os.ResumeSimulation()
+		status.SetText("Running")
+		dash.IsRunnning = true
+	})
+
 	pauseSimulationButton := widget.NewButton("Pause", func() {
+		if !dash.IsRunnning {
+			return
+		}
+		go os.PauseSimulation()
 		status.SetText("Paused")
+		dash.IsRunnning = false
 	})
 
 	nextStepSimulationButton := widget.NewButton("Next Step", func() {
 		fmt.Println("test")
 	})
 
+	nextProcessSimulationButton := widget.NewButton("Next Process", func() {
+		fmt.Println("test")
+		os.ContextSwitch(*os.GetCpu())
+	})
+
 	topBarContainer := container.NewHBox(
 		startSimulationButton,
 		stopSimulationButton,
+		resumetSimulationButton,
 		pauseSimulationButton,
 		nextStepSimulationButton,
+		nextProcessSimulationButton,
 		status,
 		clock,
 	)
@@ -152,7 +151,7 @@ func Dashboard() {
 
 	// Create buttons for starting and stopping the simulation
 	startTestSimulationButton := widget.NewButton("Start Test Simulation", func() {
-		if isRunning == false {
+		if !isRunning {
 			go temp.Run(stopChan)
 			isRunning = true
 		}
@@ -180,10 +179,11 @@ func Dashboard() {
 	)
 	cpu := container.NewTabItem("CPU", setupCpuTab(os))
 	memory := container.NewTabItem("MEMORY", setupMemoryTab(os.Memory))
-	disk := container.NewTabItem("DISK", widget.NewLabel("disk"))
-	processes := container.NewTabItem("Processes", widget.NewLabel("Process list"))
-	test := container.NewTabItem("TEST", buttonsContainer)
+	processes := container.NewTabItem("Processes", CreatePCBUI(&os.ProcessList))
+	scheduler := container.NewTabItem("Scheduler", widget.NewLabel("Ready Queue and the like"))
 	calculator := container.NewTabItem("Calculator", setupCalculatorTab())
+	disk := container.NewTabItem("DISK", widget.NewLabel("disk"))
+	test := container.NewTabItem("TEST", buttonsContainer)
 
 	tabs := container.NewAppTabs(
 		cpu,
@@ -194,6 +194,7 @@ func Dashboard() {
 		disk,
 		test,
 		calculator,
+		scheduler,
 	)
 
 	tabsContainer := container.NewStack(tabs)

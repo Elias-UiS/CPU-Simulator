@@ -14,10 +14,12 @@ type PTE struct { // Page table entry
 	//Valid       bool   // Page is valid in memory
 	FrameNumber uint32 // Physical frame number
 	Type        PageType
-	//Read        bool   // Read permission
-	//Write       bool   // Write permission
-	//Execute     bool   // Execute permission
 	//Dirty       bool   // Modified flag
 	//Referenced  bool   // Recently accessed flag
 	//SwapLoc     uint32 // Location on disk if swapped
+}
+
+type PageTable struct {
+	Entries       map[uint16]*PTE // Maps virtual page numbers to PTEs
+	NextFreeIndex uint16          // Temp solution
 }

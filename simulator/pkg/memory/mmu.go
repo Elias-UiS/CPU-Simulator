@@ -7,8 +7,8 @@ import (
 )
 
 type MMU struct {
-	TLB       int     // doesnt store int, only temp. cache
-	PageTable *[]*PTE // Pages
+	TLB       int        // doesnt store int, only temp. cache
+	PageTable *PageTable // Pages
 	memory    *Memory
 }
 
@@ -24,16 +24,16 @@ func (mmu *MMU) TranslateAddress(virtualAddr uint32) (int, error) {
 		logger.Log.Println(err)
 		return -1, err
 	}
-	if int(vpn) >= len(*mmu.PageTable) {
+	if int(vpn) >= len(mmu.PageTable.Entries) {
 
 		logger.Log.Printf("INFO: TranslateAddress() - VPN: %d\n", int(vpn))
-		logger.Log.Printf("INFO: TranslateAddress() - PageTableSize: %d\n", len(*mmu.PageTable))
+		logger.Log.Printf("INFO: TranslateAddress() - PageTableSize: %d\n", len(mmu.PageTable.Entries))
 		err := fmt.Errorf("ERROR: mmu_TranslateAddress() | pfn: address out of bounds")
 		logger.Log.Println(err)
 		return -1, err
 	}
 
-	pte := (*mmu.PageTable)[vpn]
+	pte := (mmu.PageTable.Entries)[vpn]
 	frame := pte.FrameNumber
 	physicalAddr := (uint32(frame) << 16) | uint32(offset)
 
@@ -86,15 +86,17 @@ func (mmu *MMU) Write(physicalAddr uint32, value uint32) error {
 
 func NewMMU(mem *Memory) *MMU {
 	mmu := &MMU{
-		TLB:       settings.NumFrames,
-		PageTable: &[]*PTE{},
-		memory:    mem,
+		TLB: settings.NumFrames,
+		PageTable: &PageTable{
+			Entries: make(map[uint16]*PTE),
+		},
+		memory: mem,
 	}
 
 	return mmu
 }
 
-func (mmu *MMU) SetPageTable(pageTable *[]*PTE) {
+func (mmu *MMU) SetPageTable(pageTable *PageTable) {
 	mmu.PageTable = pageTable
 }
 

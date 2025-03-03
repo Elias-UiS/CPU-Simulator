@@ -3,3 +3,8 @@ Literature study.
 Incremental implementation.
 Gather metrics to generate plots for performance analysis.
 GUI user interface in Fyne (Go framework) .
+
+
+
+I need to incrementally implement a simulator of a CPU with one or several cores with caches and memory. As such I need to simulate CPU cycles (Fetch, Decode, Execute), interrupts, scheduling, MMUs, and a canonical I/O device.
+

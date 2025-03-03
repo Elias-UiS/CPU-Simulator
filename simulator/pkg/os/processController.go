@@ -4,40 +4,33 @@ import (
 	"CPU-Simulator/simulator/pkg/cpu"
 	"CPU-Simulator/simulator/pkg/logger"
 	"CPU-Simulator/simulator/pkg/memory"
+	"CPU-Simulator/simulator/pkg/processes"
 	"fmt"
 )
 
 // Main struct
 type Controller struct {
 	nextFreeID   int
-	ProcessTable []*PCB
+	ProcessTable []*processes.PCB
 	mmu          *memory.MMU
+	freelist     *memory.FreeList
 }
 
-type PCB struct {
-	Pid                 int           // id of the process
-	Name                string        // Name of process, only for showing in list.
-	PageTable           []*memory.PTE // index is the same as the virtual page number
-	State               string
-	ProgramCounter      int
-	StackPointer        int
-	NextFreeCodeAddress uint32 // next address for the storing instructions
-}
-
-func (controller *Controller) MakeProcess() (*PCB, error) {
+func (controller *Controller) MakeProcess() (*processes.PCB, error) {
 	logger.Log.Println("INFO: MakeProcess()")
 	pageNum := 3
-	pcb := &PCB{
-		Pid:                 controller.nextFreeID,
-		Name:                "Default",
-		State:               "New",
-		ProgramCounter:      0,
-		StackPointer:        128,
-		PageTable:           []*memory.PTE{}, // TODO change later
+	pcb := &processes.PCB{
+		Pid:          controller.nextFreeID,
+		Name:         "Default",
+		State:        processes.New,
+		ProcessState: processes.ProcessState{},
+		PageTable: memory.PageTable{
+			Entries: make(map[uint16]*memory.PTE),
+		},
 		NextFreeCodeAddress: 0,
 	}
 	logger.Log.Println("INFO: MakeProcess() 2")
-	list, err := memory.FreelistObject.AllocateFrame(pageNum)
+	list, err := controller.freelist.AllocateFrame(pageNum)
 	logger.Log.Println("INFO: MakeProcess() 3")
 	if err != nil {
 		logger.Log.Println("INFO: MakeProcess() 4")
@@ -46,26 +39,21 @@ func (controller *Controller) MakeProcess() (*PCB, error) {
 	}
 	logger.Log.Println("INFO: MakeProcess() 5")
 	for i := range len(list) - 1 {
-		logger.Log.Println("INFO: MakeProcess() loop")
 		segmentType := memory.PageType(i)
-		logger.Log.Println("INFO: MakeProcess() loop 2")
 		pte := &memory.PTE{
 			FrameNumber: uint32(list[i]),
 			Type:        segmentType,
 		}
-		logger.Log.Println("INFO: MakeProcess() loop 3")
-		pcb.PageTable = append(pcb.PageTable, pte)
-		logger.Log.Println("INFO: MakeProcess() loop 5")
+		pcb.PageTable.Entries[pcb.PageTable.NextFreeIndex] = pte
+		pcb.PageTable.NextFreeIndex += 1
 	}
-	logger.Log.Println("INFO: MakeProcess() 6")
 	controller.ProcessTable = append(controller.ProcessTable, pcb)
-	logger.Log.Println("INFO: MakeProcess() 7")
-
+	controller.nextFreeID += 1
 	return pcb, nil
 }
 
-func (controller *Controller) AddPages(pcb *PCB, pageNum int, segmentType int) {
-	list, err := memory.FreelistObject.AllocateFrame(pageNum)
+func (controller *Controller) AddPages(pcb *processes.PCB, pageNum int, segmentType int) {
+	list, err := controller.freelist.AllocateFrame(pageNum)
 	if err != nil {
 		fmt.Println("Error: ProcessController | addPages\n", err)
 		return
@@ -75,21 +63,21 @@ func (controller *Controller) AddPages(pcb *PCB, pageNum int, segmentType int) {
 			FrameNumber: uint32(i),
 			Type:        memory.PageType(segmentType),
 		}
-		index := len(pcb.PageTable)
-		pcb.PageTable[index] = pte
+		pcb.PageTable.Entries[pcb.PageTable.NextFreeIndex] = pte
+		pcb.PageTable.NextFreeIndex += 1
 	}
 }
 
-func (controller *Controller) DeallocateFrameForProcess(pcb *PCB) {
+func (controller *Controller) DeallocateFrameForProcess(pcb *processes.PCB) {
 	list := []int{}
-	for i := range len(pcb.PageTable) {
-		num := pcb.PageTable[i].FrameNumber
+	for index := range pcb.PageTable.Entries {
+		num := pcb.PageTable.Entries[index].FrameNumber
 		list = append(list, int(num))
 	}
-	memory.FreelistObject.DeallocateFrame(list)
+	controller.freelist.DeallocateFrame(list)
 }
 
-func (controller *Controller) FindPCB(id int) (*PCB, error) {
+func (controller *Controller) FindPCB(id int) (*processes.PCB, error) {
 	for i := range len(controller.ProcessTable) {
 		if controller.ProcessTable[i].Pid == id {
 			return controller.ProcessTable[i], nil
@@ -118,12 +106,17 @@ func (controller *Controller) StoreInstruction(instruction uint64, id int) {
 
 }
 
-func createController(mmu *memory.MMU) Controller {
-	controller := Controller{0, []*PCB{}, mmu}
-	return controller
+func createController(mmu *memory.MMU, freelist *memory.FreeList) *Controller {
+	controller := Controller{
+		0,
+		[]*processes.PCB{},
+		mmu,
+		freelist,
+	}
+	return &controller
 }
 
-func (controller *Controller) ScheduleProcess(pcb *PCB) {
+func (controller *Controller) SetPageTabletoMMU(pcb *processes.PCB) {
 	controller.mmu.SetPageTable(&pcb.PageTable)
 	fmt.Printf("Switched to Process %d\n", pcb.Pid)
 }
@@ -140,7 +133,7 @@ func (controller *Controller) MakeTestProcessFromFile() {
 	fmt.Println(pcb)
 }
 
-func (controller *Controller) MakeTestProcessBasic() *PCB {
+func (controller *Controller) MakeTestProcessBasic() *processes.PCB {
 	logger.Log.Println("INFO: MakeTestProcessBasic()")
 	pcb, err := controller.MakeProcess()
 	if err != nil {
@@ -163,7 +156,25 @@ func (controller *Controller) MakeTestProcessBasic() *PCB {
 	return pcb
 }
 
-func MakeController(mmu *memory.MMU) *Controller {
-	controller := Controller{0, []*PCB{}, mmu}
-	return &controller
+func (controller *Controller) MakeTestProcessBasic2() *processes.PCB {
+	logger.Log.Println("INFO: MakeTestProcessBasic()")
+	pcb, err := controller.MakeProcess()
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
+	pcb.Name = "Increment"
+	instructionAdd := cpu.Instruction{0, cpu.ADD, 10}
+	instructionStore := cpu.Instruction{0, cpu.STORE, 65536}
+	instructionJump := cpu.Instruction{0, cpu.JUMP, 0}
+
+	instructionAddBytes := instructionAdd.ToInt()
+	instructionStoreBytes := instructionStore.ToInt()
+	instructionJumpBytes := instructionJump.ToInt()
+
+	controller.StoreInstruction(instructionAddBytes, pcb.Pid)
+	controller.StoreInstruction(instructionStoreBytes, pcb.Pid)
+	controller.StoreInstruction(instructionJumpBytes, pcb.Pid)
+	fmt.Println(pcb)
+	return pcb
 }

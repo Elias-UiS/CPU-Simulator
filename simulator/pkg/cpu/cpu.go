@@ -81,9 +81,12 @@ type Registers struct {
 }
 
 type CPU struct {
-	Registers Registers
-	opcodes   map[int]func(*CPU) // Map opcode to a handler function
-	mmu       *memory.MMU
+	Registers  Registers
+	opcodes    map[int]func(*CPU) // Map opcode to a handler function
+	mmu        *memory.MMU
+	isPaused   bool      // Flag to check if the CPU is paused
+	pauseChan  chan bool // Channel to signal when to pause
+	resumeChan chan bool // Channel to signal when to resume
 }
 
 // Register a new opcode
@@ -233,22 +236,47 @@ func NewCPU(mmu *memory.MMU) *CPU {
 }
 
 func (cpu *CPU) Run() {
+	cpu.isPaused = false
+	cpu.pauseChan = make(chan bool)  // To pause the CPU
+	cpu.resumeChan = make(chan bool) // To resume the CPU
 	logger.Log.Println("INFO: CPU Run()")
+
 	for {
-		if len(*cpu.mmu.PageTable) == 0 {
+		if len(cpu.mmu.PageTable.Entries) == 0 {
 			logger.Log.Println("No page table found")
 			time.Sleep(1000 * time.Millisecond)
 			continue
 		}
 
-		time.Sleep(1000 * time.Millisecond)
-		cpu.fetch()
-		time.Sleep(1000 * time.Millisecond)
-		cpu.decode()
-		time.Sleep(1000 * time.Millisecond)
-		cpu.execute()
-		time.Sleep(1000 * time.Millisecond)
+		// Handle pause/resume logic
+		select {
+		case <-cpu.pauseChan:
+			cpu.isPaused = true
+			logger.Log.Println("INFO: CPU paused")
+			// Waits until resume signal is received
+			<-cpu.resumeChan
+			cpu.isPaused = false
+			logger.Log.Println("INFO: CPU resumed")
+		default:
+			// Proceed with CPU operations
+			if !cpu.isPaused {
+				cpu.fetch()
+				time.Sleep(500 * time.Millisecond)
+				cpu.decode()
+				time.Sleep(500 * time.Millisecond)
+				cpu.execute()
+				time.Sleep(500 * time.Millisecond)
+			}
+		}
 	}
+}
+
+func (cpu *CPU) Pause() {
+	cpu.pauseChan <- true
+}
+
+func (cpu *CPU) Resume() {
+	cpu.resumeChan <- true
 }
 
 // func Run(cpu *CPU) {
