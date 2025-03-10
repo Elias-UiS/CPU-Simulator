@@ -15,6 +15,23 @@ const (
 	Terminated
 )
 
+func (s State) String() string {
+	switch s {
+	case New:
+		return "New"
+	case Ready:
+		return "Ready"
+	case Running:
+		return "Running"
+	case Blocked:
+		return "Blocked"
+	case Terminated:
+		return "Terminated"
+	default:
+		return "Unknown"
+	}
+}
+
 type ProcessState struct {
 	StackPointer uint32 // Address of the top of the stack
 
@@ -36,11 +53,12 @@ type ProcessState struct {
 }
 
 type PCB struct {
-	Pid                 int              // id of the process
-	Name                string           // Name of process, only for showing in list.
-	PageTable           memory.PageTable // index is the same as the virtual page number
-	State               State            // New, Ready, Running, Blocked
+	Pid                 int               // id of the process
+	Name                string            // Name of process, only for showing in list.
+	PageTable           *memory.PageTable // index is the same as the virtual page number
+	State               State             // New, Ready, Running, Blocked
 	ProcessState        ProcessState
 	NextFreeCodeAddress uint32 // next address for the storing instructions
 	Priority            int
+	PageAmount          int
 }

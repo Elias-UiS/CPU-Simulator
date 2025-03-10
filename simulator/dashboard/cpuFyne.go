@@ -77,7 +77,7 @@ func setupCpuTab(os *os.OS) fyne.CanvasObject {
 			boundIsInstruction.Set(cpu.Registers.MDR.IsInstruction)
 			boundData.Set(cpu.Registers.MDR.Data)
 
-			time.Sleep(100 * time.Millisecond) // Adjust refresh rate as needed
+			time.Sleep(10 * time.Millisecond) // Adjust refresh rate as needed
 		}
 	}()
 

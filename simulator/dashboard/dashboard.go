@@ -3,7 +3,6 @@ package dashboard
 import (
 	"CPU-Simulator/simulator/pkg/logger"
 	"CPU-Simulator/simulator/pkg/os"
-	"CPU-Simulator/simulator/pkg/temp"
 	"fmt"
 	"time"
 
@@ -87,6 +86,7 @@ func Dashboard(dash *DashboardStruct) {
 	//////////////////////////////////
 
 	os := os.NewOS()
+	go os.TestNumer()
 	//var cpuInstance = os.CPU[0]
 
 	clock := widget.NewLabel("00:00:00")
@@ -132,7 +132,7 @@ func Dashboard(dash *DashboardStruct) {
 
 	nextProcessSimulationButton := widget.NewButton("Next Process", func() {
 		fmt.Println("test")
-		os.ContextSwitch(*os.GetCpu())
+		os.ContextSwitch(os.GetCpu())
 	})
 
 	topBarContainer := container.NewHBox(
@@ -146,55 +146,21 @@ func Dashboard(dash *DashboardStruct) {
 		clock,
 	)
 
-	stopChan := make(chan bool)
-	isRunning := false
-
-	// Create buttons for starting and stopping the simulation
-	startTestSimulationButton := widget.NewButton("Start Test Simulation", func() {
-		if !isRunning {
-			go temp.Run(stopChan)
-			isRunning = true
-		}
-	})
-	stopTestSimulationButton := widget.NewButton("Stop Test Simulation", func() {
-		if isRunning {
-			stopChan <- true
-			isRunning = false
-		}
-	})
-
-	resetCPUButton := widget.NewButton("Reset CPU", func() {
-		// Todo?
-	})
-	viewStatsButton := widget.NewButton("View CPU Stats", func() {
-		// Todo?
-	})
-
-	// Organize buttons into a VBox (vertical layout)
-	buttonsContainer := container.NewVBox(
-		startTestSimulationButton,
-		stopTestSimulationButton,
-		resetCPUButton,
-		viewStatsButton,
-	)
 	cpu := container.NewTabItem("CPU", setupCpuTab(os))
 	memory := container.NewTabItem("MEMORY", setupMemoryTab(os.Memory))
-	processes := container.NewTabItem("Processes", CreatePCBUI(&os.ProcessList))
-	scheduler := container.NewTabItem("Scheduler", widget.NewLabel("Ready Queue and the like"))
+	processes := container.NewTabItem("Processes", CreatePCBUI(os.ProcessTable))
+	scheduler := container.NewTabItem("Scheduler", CreateSchedulerTab(os.Scheduler))
 	calculator := container.NewTabItem("Calculator", setupCalculatorTab())
-	disk := container.NewTabItem("DISK", widget.NewLabel("disk"))
-	test := container.NewTabItem("TEST", buttonsContainer)
-
+	test := container.NewTabItem("TestBindings", TestBinding(os))
 	tabs := container.NewAppTabs(
 		cpu,
 		memory,
 		processes, // Todo: Implement processes tab
 		// Den skal inneholde en liste over alle prosessene som kjører, og informasjon om hver enkelt prosess.
 		// Som Pages, og memoriet til den.
-		disk,
-		test,
-		calculator,
 		scheduler,
+		calculator,
+		test,
 	)
 
 	tabsContainer := container.NewStack(tabs)

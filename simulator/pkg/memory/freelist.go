@@ -7,23 +7,23 @@ import (
 )
 
 type FreeList struct {
-	freeList           []bool // tracks free physical frames
-	numberOfFreeFrames int    // free frames
+	FreeList           []bool // tracks free physical frames
+	NumberOfFreeFrames int    // free frames
 }
 
 // Sets the frame to be not free.
 func (freeList *FreeList) AllocateFrame(framesNeeded int) ([]int, error) {
-	if framesNeeded > freeList.numberOfFreeFrames {
+	if framesNeeded > freeList.NumberOfFreeFrames {
 		return nil, fmt.Errorf("Not enough free frames.")
 	}
 	list := []int{}
 	logger.Log.Println("INFO: AllocateFrame() 1")
 	gotten := 0
-	for i := range freeList.freeList {
-		if freeList.freeList[i] == true {
+	for i := range freeList.FreeList {
+		if freeList.FreeList[i] == true {
 			list = append(list, i)
 			gotten += 1
-			freeList.freeList[i] = false
+			freeList.FreeList[i] = false
 		}
 		if framesNeeded == gotten {
 			break
@@ -32,7 +32,7 @@ func (freeList *FreeList) AllocateFrame(framesNeeded int) ([]int, error) {
 	}
 	logger.Log.Println("INFO: AllocateFrame() 2")
 	logger.Log.Printf("INFO: AllocateFrame() %d ", gotten)
-	freeList.numberOfFreeFrames -= gotten
+	freeList.NumberOfFreeFrames -= gotten
 	return list, nil
 }
 
@@ -40,16 +40,16 @@ func (freeList *FreeList) AllocateFrame(framesNeeded int) ([]int, error) {
 func (freeList *FreeList) DeallocateFrame(list []int) {
 	for i := range list {
 		index := list[i]
-		freeList.freeList[index] = true
-		freeList.numberOfFreeFrames += 1
+		freeList.FreeList[index] = true
+		freeList.NumberOfFreeFrames += 1
 	}
 }
 
 func NewFreeList() *FreeList {
-	freeList := &FreeList{numberOfFreeFrames: settings.NumFrames}
-	freeList.freeList = make([]bool, settings.NumFrames)
-	for i := range freeList.freeList {
-		freeList.freeList[i] = true
+	freeList := &FreeList{NumberOfFreeFrames: settings.NumFrames}
+	freeList.FreeList = make([]bool, settings.NumFrames)
+	for i := range freeList.FreeList {
+		freeList.FreeList[i] = true
 	}
 	return freeList
 }

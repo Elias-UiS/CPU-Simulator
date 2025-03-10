@@ -7,18 +7,20 @@ import (
 	"CPU-Simulator/simulator/pkg/processes"
 	"CPU-Simulator/simulator/pkg/scheduler"
 	"fmt"
+	"time"
 )
 
 type OS struct {
 	CPU           []*cpu.CPU
 	Memory        *memory.Memory
 	MMU           *memory.MMU
-	ProcessList   map[uint32]*processes.PCB
+	ProcessTable  *processes.ProcessTable
 	FreeList      *memory.FreeList
 	CpuController *Controller
 	Scheduler     scheduler.SchedulerInterface
 	osIsRunning   bool
 	cpuIsRunning  bool
+	Test          int
 }
 
 func NewOS() *OS {
@@ -34,18 +36,24 @@ func NewOS() *OS {
 	// Initialize free list
 	freeList := memory.NewFreeList()
 
+	processTableStruct := processes.CreateProcessTable()
+
+	scheduler := scheduler.NewScheduler()
+
 	// Initialize processController
-	controller := createController(mmu, freeList)
+	controller := createController(mmu, freeList, processTableStruct)
 
 	return &OS{
 		CPU:           []*cpu.CPU{cpuInstance},
 		Memory:        mem,
 		MMU:           mmu,
-		ProcessList:   make(map[uint32]*processes.PCB),
+		ProcessTable:  processTableStruct,
 		FreeList:      freeList,
 		CpuController: controller,
 		osIsRunning:   false,
 		cpuIsRunning:  false,
+		Scheduler:     scheduler,
+		Test:          10,
 	}
 }
 
@@ -55,18 +63,35 @@ func (os *OS) StartSimulation() {
 	}
 	logger.Log.Println("Starting simulation...")
 	os.osIsRunning = true
-	scheduler := os.GetScheduler()
-	os.Scheduler = scheduler
+
 	pcb := os.CpuController.MakeTestProcessBasic()
 	pcb2 := os.CpuController.MakeTestProcessBasic2()
 	pcb3 := os.CpuController.MakeTestProcessBasic()
-	os.AddProcessToScheduler(pcb)
-	os.AddProcessToScheduler(pcb2)
-	os.AddProcessToScheduler(pcb3)
+
+	// os.AddProcessToProcessTable(pcb)
+	// os.AddProcessToProcessTable(pcb2)
+	// os.AddProcessToProcessTable(pcb3)
+
+	os.AddProcessToSchedulerQueue(pcb)
+	os.AddProcessToSchedulerQueue(pcb2)
+	os.AddProcessToSchedulerQueue(pcb3)
+
 	nextPcb := os.Scheduler.GetNextProcess()
 	os.CpuController.SetPageTabletoMMU(nextPcb)
 	go os.CPU[0].Run() // Run CPU in a separate goroutine
 	os.cpuIsRunning = true
+
+	// For testing REMOVE later
+	logger.Log.Println("Number of free Fames", os.FreeList.NumberOfFreeFrames)
+	os.Memory.Frames[15][0] = 50
+	os.Memory.Frames[15][6] = 50
+	queue := os.Scheduler.GetReadyQueue()
+	logger.Log.Println("Info: Checking Ready Queue")
+	for i := range len(queue) {
+		logger.Log.Println(queue[i])
+	}
+	/////
+
 }
 
 func (os *OS) PauseSimulation() {
@@ -81,7 +106,7 @@ func (os *OS) PauseSimulation() {
 }
 
 func (os *OS) ResumeSimulation() {
-	if os.cpuIsRunning || !os.osIsRunning {
+	if os.osIsRunning {
 		return
 	}
 	logger.Log.Println("Testing bug here")
@@ -110,32 +135,57 @@ func (os *OS) Reset() {
 	os.FreeList = memory.NewFreeList()
 }
 
-func (os *OS) ContextSwitch(cpu cpu.CPU) {
+func (os *OS) ContextSwitch(cpu *cpu.CPU) {
+	if !cpu.IsPaused {
+		cpu.Pause()
+	}
+	for i := range os.Scheduler.GetReadyQueue() {
+		logger.Log.Println("Ready Queue list 1: ", os.Scheduler.GetReadyQueue()[i].Pid)
+	}
 	currentProcess := os.Scheduler.GetRunningProcess()
-	logger.Log.Println("currentProcess.Pid")
-	logger.Log.Println(currentProcess.Pid)
+	logger.Log.Printf("currentProcess.Pid: %d", currentProcess.Pid)
 	if currentProcess == nil {
 		logger.Log.Println("No processes currently running.")
 		return
 	}
+	for i := range os.Scheduler.GetReadyQueue() {
+		logger.Log.Println("Ready Queue list 2: ", os.Scheduler.GetReadyQueue()[i].Pid)
+	}
 	nextProcess := os.Scheduler.GetNextProcess()
+	for i := range os.Scheduler.GetReadyQueue() {
+		logger.Log.Println("Ready Queue list 3: ", os.Scheduler.GetReadyQueue()[i].Pid)
+	}
+	logger.Log.Printf("Info: IsTerminated Check: %d", currentProcess.State)
+	if currentProcess.State != processes.Terminated {
+		currentProcess.State = processes.Ready
+		os.AddProcessToSchedulerQueue(currentProcess)
+	}
+
 	if nextProcess == nil {
 		logger.Log.Println("No processes in the ready queue.")
 		return
 	}
-	logger.Log.Println("nextProcess.Pid")
-	logger.Log.Println(nextProcess.Pid)
-
+	logger.Log.Printf("nextProcess.Pid: %d", nextProcess.Pid)
 	logger.Log.Println("Context switching from process", currentProcess.Pid)
-	newPCB := os.Scheduler.GetNextProcess()
+	for i := range os.Scheduler.GetReadyQueue() {
+		logger.Log.Println("Ready Queue list 4: ", os.Scheduler.GetReadyQueue()[i].Pid)
+	}
+	logger.Log.Println("Context switching to process", nextProcess.Pid)
 	os.SaveProcessState(currentProcess, cpu) // Saves the process state of pcb from cpu to pcb..
-	os.CpuController.SetPageTabletoMMU(newPCB)
-	os.SetNewProcessState(newPCB, cpu) // Sets the process state of pcb to cpu.
-	cpu.Resume()
+	os.CpuController.SetPageTabletoMMU(nextProcess)
+	for index := range len(nextProcess.PageTable.Entries) {
+		logger.Log.Printf("Index: %d, Value: %d\n", index, nextProcess.PageTable.Entries[uint16(index)].FrameNumber)
+	}
+	os.SetNewProcessState(nextProcess, cpu) // Sets the process state of pcb to cpu.
+	nextProcess.State = processes.Running
+	if os.cpuIsRunning {
+		cpu.Resume()
+	}
+
 }
 
 // Function to save the state of the current process
-func (os *OS) SaveProcessState(pcb *processes.PCB, cpu cpu.CPU) {
+func (os *OS) SaveProcessState(pcb *processes.PCB, cpu *cpu.CPU) {
 	logger.Log.Println("Saving state for process", pcb.Pid)
 
 	// Simulate saving program counter and stack pointer (this is an abstract example)
@@ -153,7 +203,7 @@ func (os *OS) SaveProcessState(pcb *processes.PCB, cpu cpu.CPU) {
 }
 
 // Function to set the process state of the new scheduled process to the cpu.
-func (os *OS) SetNewProcessState(pcb *processes.PCB, cpu cpu.CPU) {
+func (os *OS) SetNewProcessState(pcb *processes.PCB, cpu *cpu.CPU) {
 	logger.Log.Println("SetNewProcessState()", pcb.Pid)
 
 	// Simulate saving program counter and stack pointer (this is an abstract example)
@@ -178,17 +228,22 @@ func (os *OS) GetCpu() *cpu.CPU {
 	return os.CPU[0]
 }
 
-func (os *OS) AddProcessToMap(pcb *processes.PCB) {
-	id := pcb.Pid
-	os.ProcessList[uint32(id)] = pcb
-	return
+func (os *OS) AddProcessToProcessTable(pcb *processes.PCB) {
+	os.ProcessTable.AddProcessToTable(pcb)
 }
-func (os *OS) AddProcessToScheduler(pcb *processes.PCB) {
+func (os *OS) AddProcessToSchedulerQueue(pcb *processes.PCB) {
 	os.Scheduler.AddProcess(pcb)
-	os.AddProcessToMap(pcb)
 }
 
 func (os *OS) GetScheduler() scheduler.SchedulerInterface {
 	scheduler := scheduler.NewScheduler()
 	return scheduler
+}
+
+func (os *OS) TestNumer() {
+
+	for {
+		os.Test += 1
+		time.Sleep(500 * time.Millisecond)
+	}
 }

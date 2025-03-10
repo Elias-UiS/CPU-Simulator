@@ -13,6 +13,9 @@ type MMU struct {
 }
 
 func (mmu *MMU) TranslateAddress(virtualAddr uint32) (int, error) {
+	for key, value := range mmu.PageTable.Entries {
+		logger.Log.Printf("MMU - PageTableEntrie %d -> %d", key, value.FrameNumber)
+	}
 	vpn := uint16(virtualAddr >> 16)
 	offset := uint16(virtualAddr & 0xFFFF)
 	logger.Log.Printf("VPN: %d\n", vpn)
@@ -33,8 +36,7 @@ func (mmu *MMU) TranslateAddress(virtualAddr uint32) (int, error) {
 		return -1, err
 	}
 
-	pte := (mmu.PageTable.Entries)[vpn]
-	frame := pte.FrameNumber
+	frame := mmu.PageTable.Entries[vpn].FrameNumber
 	physicalAddr := (uint32(frame) << 16) | uint32(offset)
 
 	// Return the physical address (offset from base)

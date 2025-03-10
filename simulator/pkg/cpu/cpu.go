@@ -44,18 +44,10 @@ func (instruction *Instruction) ToInt() uint64 {
 	// - Opcode should be 31 bits (0 to 2147483647)
 	// - Operand should be 32 bits (0 to 4294967295)
 
-	logger.Log.Println("OpType", instruction.OpType)
-	logger.Log.Println("Opcode", instruction.Opcode)
-	logger.Log.Println("Operand", instruction.Operand)
-	logger.Log.Println("/////")
-
 	var result uint64
 	result |= uint64(instruction.OpType) << 63 // OpType takes the first bit (bit 63)
-	logger.Log.Println(result)
 	result |= uint64(instruction.Opcode) << 32 // Opcode takes the next 31 bits (bits 32-62)
-	logger.Log.Println(result)
-	result |= uint64(instruction.Operand) // Operand takes the last 32 bits (bits 0-31)
-	logger.Log.Println(result)
+	result |= uint64(instruction.Operand)      // Operand takes the last 32 bits (bits 0-31)
 
 	return result
 }
@@ -84,7 +76,7 @@ type CPU struct {
 	Registers  Registers
 	opcodes    map[int]func(*CPU) // Map opcode to a handler function
 	mmu        *memory.MMU
-	isPaused   bool      // Flag to check if the CPU is paused
+	IsPaused   bool      // Flag to check if the CPU is paused
 	pauseChan  chan bool // Channel to signal when to pause
 	resumeChan chan bool // Channel to signal when to resume
 }
@@ -98,6 +90,7 @@ func (cpu *CPU) fetch() {
 	logger.Log.Println("INFO: CPU fetch() instruction")
 	virtualAddr := uint32(cpu.Registers.PC)
 	physicalAddr, err := cpu.mmu.TranslateAddress(virtualAddr)
+	logger.Log.Printf("INFO: CPU.Fetch() - PhysicalAddr: %d", physicalAddr)
 	if physicalAddr == -1 {
 		fmt.Println(err)
 	}
@@ -123,10 +116,6 @@ func (cpu *CPU) fetch() {
 	}
 
 	operand := addressBits
-	logger.Log.Println("////")
-	logger.Log.Println(instructionType)
-	logger.Log.Println(opcode)
-	logger.Log.Println(operand)
 	instruction := Instruction{instructionType, opcode, operand}
 	var mdr MDR = MDR{IsInstruction: true, Instruction: instruction}
 	cpu.Registers.MDR = mdr
@@ -162,6 +151,9 @@ func (cpu *CPU) execute() {
 	if handler, exists := cpu.opcodes[opcode]; exists {
 		handler(cpu)
 	}
+	for i := range cpu.mmu.PageTable.Entries {
+		logger.Log.Printf("INFO: CPU.execute() - PageTable Entry nr: %d -> %d", i, cpu.mmu.PageTable.Entries[i].FrameNumber)
+	}
 }
 
 func getOpcodeName(opcode int) string {
@@ -173,14 +165,14 @@ func getOpcodeName(opcode int) string {
 
 // Instructions
 func add(cpu *CPU) {
-	logger.Log.Println("INFO: CPU add() instruction")
+	logger.Log.Println("INFO: CPU add()")
 	var oldAcc int = cpu.Registers.AC
 	cpu.Registers.AC += cpu.Registers.MDR.Data
 	fmt.Printf("Prev ACC: %d + Data: %d = New ACC: %d \n", oldAcc, cpu.Registers.MDR.Data, cpu.Registers.AC)
 }
 
 func sub(cpu *CPU) {
-	logger.Log.Println("INFO: CPU sub() instruction")
+	logger.Log.Println("INFO: CPU sub()")
 	var oldAcc int = cpu.Registers.AC
 	cpu.Registers.AC -= cpu.Registers.MDR.Data
 	fmt.Printf("Prev ACC: %d - Data: %d = New ACC: %d \n", oldAcc, cpu.Registers.MDR.Data, cpu.Registers.AC)
@@ -193,25 +185,31 @@ func print(cpu *CPU) {
 }
 
 func store(cpu *CPU) {
-	logger.Log.Println("INFO: CPU store() instruction")
+	logger.Log.Println("INFO: CPU store()")
 	value := cpu.Registers.AC
 	destination := cpu.Registers.MDR.Data
-	cpu.mmu.Write(uint32(destination), uint32(value))
+	logger.Log.Printf("DEBUG: store() address %d", destination)
+	physAddr, err := cpu.mmu.TranslateAddress(uint32(destination))
+	if err != nil {
+		logger.Log.Printf("ERROR: Store() %s", err)
+		return
+	}
+	cpu.mmu.Write(uint32(physAddr), uint32(value))
 	logger.Log.Println(destination)
 	logger.Log.Println(value)
 }
 
 func halt(cpu *CPU) {
-	logger.Log.Println("INFO: CPU halt() instruction")
+	logger.Log.Println("INFO: CPU halt()")
 }
 
 func jump(cpu *CPU) {
-	logger.Log.Println("INFO: CPU jump() instruction")
+	logger.Log.Println("INFO: CPU jump()")
 	cpu.Registers.PC = cpu.Registers.MDR.Data
 }
 
 func clear(cpu *CPU) {
-	logger.Log.Println("INFO: CPU clear() instruction")
+	logger.Log.Println("INFO: CPU clear()")
 	cpu.Registers.AC = 0
 }
 
@@ -236,7 +234,7 @@ func NewCPU(mmu *memory.MMU) *CPU {
 }
 
 func (cpu *CPU) Run() {
-	cpu.isPaused = false
+	cpu.IsPaused = false
 	cpu.pauseChan = make(chan bool)  // To pause the CPU
 	cpu.resumeChan = make(chan bool) // To resume the CPU
 	logger.Log.Println("INFO: CPU Run()")
@@ -251,15 +249,15 @@ func (cpu *CPU) Run() {
 		// Handle pause/resume logic
 		select {
 		case <-cpu.pauseChan:
-			cpu.isPaused = true
+			cpu.IsPaused = true
 			logger.Log.Println("INFO: CPU paused")
 			// Waits until resume signal is received
 			<-cpu.resumeChan
-			cpu.isPaused = false
+			cpu.IsPaused = false
 			logger.Log.Println("INFO: CPU resumed")
 		default:
 			// Proceed with CPU operations
-			if !cpu.isPaused {
+			if !cpu.IsPaused {
 				cpu.fetch()
 				time.Sleep(500 * time.Millisecond)
 				cpu.decode()
