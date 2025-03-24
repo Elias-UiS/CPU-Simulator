@@ -1,8 +1,8 @@
 package dashboard
 
 import (
+	"CPU-Simulator/simulator/pkg/bindings"
 	"CPU-Simulator/simulator/pkg/os"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -19,27 +19,18 @@ func setupCpuTab(os *os.OS) fyne.CanvasObject {
 		cpu = os.GetCpu()
 	}
 
-	// Create bindings for register values
-	boundPC := binding.NewInt()
-	boundAC := binding.NewInt()
-	boundMAR := binding.NewInt()
-	boundOpType := binding.NewInt()
-	boundOpcode := binding.NewInt()
-	boundOperand := binding.NewInt()
-	boundIsInstruction := binding.NewBool()
-	boundData := binding.NewInt()
-
 	// Define register labels and corresponding bindings
-	labels := []string{"PC:", "AC:", "MAR:", "OpType:", "Opcode:", "Operand:", "IsInstruction:", "Data:"}
+	labels := []string{"PC:", "AC:", "MAR:", "OpType:", "Opcode:", "Operand:", "IsInstruction:", "Data:", "Instruction Count:"}
 	values := []binding.DataItem{
-		binding.IntToString(boundPC),
-		binding.IntToString(boundAC),
-		binding.IntToString(boundMAR),
-		binding.IntToString(boundOpType),
-		binding.IntToString(boundOpcode),
-		binding.IntToString(boundOperand),
-		binding.BoolToString(boundIsInstruction),
-		binding.IntToString(boundData),
+		binding.IntToString(bindings.PcBinding),
+		binding.IntToString(bindings.AcBinding),
+		binding.IntToString(bindings.MarBinding),
+		binding.IntToString(bindings.InstructionOpTypeBinding),
+		binding.IntToString(bindings.InstructionOpCodeBinding),
+		binding.IntToString(bindings.InstructionOperandBinding),
+		binding.BoolToString(bindings.MdrIsInstructionBinding),
+		binding.IntToString(bindings.MdrDataBinding),
+		binding.IntToString(bindings.InstructionCount),
 	}
 
 	// Create the table
@@ -61,25 +52,8 @@ func setupCpuTab(os *os.OS) fyne.CanvasObject {
 	)
 
 	// Set table column widths
-	table.SetColumnWidth(0, 100) // Label column width
+	table.SetColumnWidth(0, 150) // Label column width
 	table.SetColumnWidth(1, 150) // Value column width
-
-	// Start a goroutine to update the values periodically
-	go func() {
-		for {
-			// Update bindings with the latest register values
-			boundPC.Set(cpu.Registers.PC)
-			boundAC.Set(cpu.Registers.AC)
-			boundMAR.Set(cpu.Registers.MAR)
-			boundOpType.Set(cpu.Registers.IR.OpType)
-			boundOpcode.Set(cpu.Registers.IR.Opcode)
-			boundOperand.Set(cpu.Registers.IR.Operand)
-			boundIsInstruction.Set(cpu.Registers.MDR.IsInstruction)
-			boundData.Set(cpu.Registers.MDR.Data)
-
-			time.Sleep(10 * time.Millisecond) // Adjust refresh rate as needed
-		}
-	}()
 
 	// Return the table inside a container
 	return container.NewBorder(

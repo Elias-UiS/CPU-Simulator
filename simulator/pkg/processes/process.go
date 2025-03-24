@@ -2,6 +2,7 @@ package processes
 
 import (
 	"CPU-Simulator/simulator/pkg/memory"
+	"CPU-Simulator/simulator/pkg/metrics"
 )
 
 // Process State Enum
@@ -57,8 +58,10 @@ type PCB struct {
 	Name                string            // Name of process, only for showing in list.
 	PageTable           *memory.PageTable // index is the same as the virtual page number
 	State               State             // New, Ready, Running, Blocked
-	ProcessState        ProcessState
-	NextFreeCodeAddress uint32 // next address for the storing instructions
-	Priority            int
-	PageAmount          int
+	ProcessState        ProcessState      // State of the registers
+	NextFreeCodeAddress uint32            // next address for the storing instructions
+	Priority            int               // Priority of the process
+	PageAmount          int               // Number of pages available to the process
+	Metrics             metrics.Metrics   // Metrics for the process
+	UpdateChan          chan bool         // Channel to notify the process has changed
 }

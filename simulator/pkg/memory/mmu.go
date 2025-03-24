@@ -7,9 +7,10 @@ import (
 )
 
 type MMU struct {
-	TLB       int        // doesnt store int, only temp. cache
-	PageTable *PageTable // Pages
-	memory    *Memory
+	TLB                  int        // doesnt store int, only temp. cache
+	PageTable            *PageTable // Pages for the cpu
+	memory               *Memory
+	PageTableForCreation *PageTable // Used accessing memory not by cpu.
 }
 
 func (mmu *MMU) TranslateAddress(virtualAddr uint32) (int, error) {
@@ -93,6 +94,9 @@ func NewMMU(mem *Memory) *MMU {
 			Entries: make(map[uint16]*PTE),
 		},
 		memory: mem,
+		PageTableForCreation: &PageTable{
+			Entries: make(map[uint16]*PTE),
+		},
 	}
 
 	return mmu

@@ -148,10 +148,12 @@ func Dashboard(dash *DashboardStruct) {
 
 	cpu := container.NewTabItem("CPU", setupCpuTab(os))
 	memory := container.NewTabItem("MEMORY", setupMemoryTab(os.Memory))
-	processes := container.NewTabItem("Processes", CreatePCBUI(os.ProcessTable))
+	processes := container.NewTabItem("Processes", CreatePCBUI(os, os.ProcessTable))
 	scheduler := container.NewTabItem("Scheduler", CreateSchedulerTab(os.Scheduler))
 	calculator := container.NewTabItem("Calculator", setupCalculatorTab())
 	test := container.NewTabItem("TestBindings", TestBinding(os))
+	processCreation := container.NewTabItem("Process Creator", ProcessCreationTab(os))
+
 	tabs := container.NewAppTabs(
 		cpu,
 		memory,
@@ -160,6 +162,7 @@ func Dashboard(dash *DashboardStruct) {
 		// Som Pages, og memoriet til den.
 		scheduler,
 		calculator,
+		processCreation,
 		test,
 	)
 

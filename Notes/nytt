@@ -1,0 +1,13 @@
+Kan endre scheduleren, til å trenege en GETREADYEQueueLOIST.
+Slik at det blir returnert en liste av queues (list ofilists=)
+Da kan jeg vise på dashboardet, hvis det er en scheduler som bruker flere queues.
+
+
+Tanker om locks:
+Årsaken til jeg ikke hadde tenkt på det, er at det ikke påvirker resultatet.
+Så hvis dashboarded leser en "gammel" verdi, er ikke dette et problem,
+forutenom at du leser en gammel verdi.
+I tillegg, skjer disse handlingene "instant", så slike feil skjer ikke.
+
+Liste over hva artitektur innebærer.
+Hvilke funksjoner jeg trenger. 

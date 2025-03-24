@@ -1,6 +1,7 @@
 package cpu
 
 import (
+	"CPU-Simulator/simulator/pkg/bindings"
 	"CPU-Simulator/simulator/pkg/logger"
 	"CPU-Simulator/simulator/pkg/memory"
 	"fmt"
@@ -10,7 +11,7 @@ import (
 // Instruction Opcodes
 const (
 	ADD   = 1 // Adds value to the accumulator
-	SUB   = 2 // Subtracts value to the accumulator
+	SUB   = 2 // Subtracts value from the accumulator
 	STORE = 3 // Store value in accumulator to a memory address
 	PRINT = 4 // Print the value of a register
 	HALT  = 5 // Stop execution
@@ -19,7 +20,7 @@ const (
 	CLEAR = 8 // Clears the accumulator		| Sets the accumulator to 0
 )
 
-var opcodeNames = map[int]string{
+var OpcodeNames = map[int]string{
 	ADD:   "ADD",
 	SUB:   "SUB",
 	STORE: "STORE",
@@ -28,6 +29,17 @@ var opcodeNames = map[int]string{
 	JUMP:  "JUMP",
 	LOAD:  "LOAD",
 	CLEAR: "CLEAR",
+}
+
+var OpcodeValues = map[string]int{
+	"ADD":   ADD,
+	"SUB":   SUB,
+	"STORE": STORE,
+	"PRINT": PRINT,
+	"HALT":  HALT,
+	"JUMP":  JUMP,
+	"LOAD":  LOAD,
+	"CLEAR": CLEAR,
 }
 
 // Instruction represents a single CPU instruction.
@@ -73,12 +85,14 @@ type Registers struct {
 }
 
 type CPU struct {
-	Registers  Registers
-	opcodes    map[int]func(*CPU) // Map opcode to a handler function
-	mmu        *memory.MMU
-	IsPaused   bool      // Flag to check if the CPU is paused
-	pauseChan  chan bool // Channel to signal when to pause
-	resumeChan chan bool // Channel to signal when to resume
+	Registers        Registers
+	opcodes          map[int]func(*CPU) // Map opcode to a handler function
+	mmu              *memory.MMU
+	IsPaused         bool           // Flag to check if the CPU is paused
+	pauseChan        chan bool      // Channel to signal when to pause
+	resumeChan       chan bool      // Channel to signal when to resume
+	EventHandler     func(cpu *CPU) // Event handler to notify the OS about the cycle
+	InstructionCount int            // Count of instructions executed for this process instance
 }
 
 // Register a new opcode
@@ -95,6 +109,8 @@ func (cpu *CPU) fetch() {
 		fmt.Println(err)
 	}
 	cpu.Registers.MAR = physicalAddr
+	bindings.MarBinding.Set(cpu.Registers.MAR)
+
 	instructionBits, err := cpu.mmu.Read(uint32(cpu.Registers.MAR))
 	if physicalAddr == -1 {
 		fmt.Println(err)
@@ -110,6 +126,7 @@ func (cpu *CPU) fetch() {
 		fmt.Println(err)
 	}
 	cpu.Registers.MAR = physicalAddr2
+	bindings.MarBinding.Set(cpu.Registers.MAR)
 	addressBits, err := cpu.mmu.Read(uint32(cpu.Registers.MAR))
 	if physicalAddr == -1 {
 		fmt.Println(err)
@@ -119,10 +136,23 @@ func (cpu *CPU) fetch() {
 	instruction := Instruction{instructionType, opcode, operand}
 	var mdr MDR = MDR{IsInstruction: true, Instruction: instruction}
 	cpu.Registers.MDR = mdr
+
+	// Update bindings
+	bindings.MdrIsInstructionBinding.Set(cpu.Registers.MDR.IsInstruction)
+	bindings.MdrInstructionOpTypeBinding.Set(cpu.Registers.MDR.Instruction.OpType)
+	bindings.MdrInstructionOpCodeBinding.Set(cpu.Registers.MDR.Instruction.Opcode)
+	bindings.MdrInstructionOperandBinding.Set(cpu.Registers.MDR.Instruction.Operand)
+	bindings.MdrDataBinding.Set(cpu.Registers.MDR.Data)
+
 	if cpu.Registers.MDR.IsInstruction {
 		cpu.Registers.IR = cpu.Registers.MDR.Instruction
+		bindings.InstructionOpTypeBinding.Set(cpu.Registers.IR.OpType)
+		bindings.InstructionOpCodeBinding.Set(cpu.Registers.IR.Opcode)
+		bindings.InstructionOperandBinding.Set(cpu.Registers.IR.Operand)
 	}
 	cpu.Registers.PC += 2
+
+	bindings.PcBinding.Set(cpu.Registers.PC) // Update binding
 }
 
 func (cpu *CPU) decode() {
@@ -130,8 +160,17 @@ func (cpu *CPU) decode() {
 	if cpu.Registers.IR.OpType == 0 {
 		var mdr MDR = MDR{IsInstruction: false, Data: cpu.Registers.MDR.Instruction.Operand}
 		cpu.Registers.MDR = mdr
+
+		// Update bindings
+		bindings.MdrIsInstructionBinding.Set(cpu.Registers.MDR.IsInstruction)
+		bindings.MdrInstructionOpTypeBinding.Set(cpu.Registers.MDR.Instruction.OpType)
+		bindings.MdrInstructionOpCodeBinding.Set(cpu.Registers.MDR.Instruction.Opcode)
+		bindings.MdrInstructionOperandBinding.Set(cpu.Registers.MDR.Instruction.Operand)
+		bindings.MdrDataBinding.Set(cpu.Registers.MDR.Data)
+
 	} else {
 		cpu.Registers.MAR = cpu.Registers.IR.Operand
+		bindings.MarBinding.Set(cpu.Registers.MAR)
 	}
 
 }
@@ -145,6 +184,12 @@ func (cpu *CPU) execute() {
 		}
 		var mdr MDR = MDR{IsInstruction: false, Data: value}
 		cpu.Registers.MDR = mdr
+		// Update bindings
+		bindings.MdrIsInstructionBinding.Set(cpu.Registers.MDR.IsInstruction)
+		bindings.MdrInstructionOpTypeBinding.Set(cpu.Registers.MDR.Instruction.OpType)
+		bindings.MdrInstructionOpCodeBinding.Set(cpu.Registers.MDR.Instruction.Opcode)
+		bindings.MdrInstructionOperandBinding.Set(cpu.Registers.MDR.Instruction.Operand)
+		bindings.MdrDataBinding.Set(cpu.Registers.MDR.Data)
 	}
 
 	var opcode int = cpu.Registers.IR.Opcode
@@ -156,8 +201,8 @@ func (cpu *CPU) execute() {
 	}
 }
 
-func getOpcodeName(opcode int) string {
-	if name, exists := opcodeNames[opcode]; exists {
+func GetOpcodeName(opcode int) string {
+	if name, exists := OpcodeNames[opcode]; exists {
 		return name
 	}
 	return "Unknown Opcode"
@@ -168,6 +213,7 @@ func add(cpu *CPU) {
 	logger.Log.Println("INFO: CPU add()")
 	var oldAcc int = cpu.Registers.AC
 	cpu.Registers.AC += cpu.Registers.MDR.Data
+	bindings.AcBinding.Set(cpu.Registers.AC)
 	fmt.Printf("Prev ACC: %d + Data: %d = New ACC: %d \n", oldAcc, cpu.Registers.MDR.Data, cpu.Registers.AC)
 }
 
@@ -175,12 +221,13 @@ func sub(cpu *CPU) {
 	logger.Log.Println("INFO: CPU sub()")
 	var oldAcc int = cpu.Registers.AC
 	cpu.Registers.AC -= cpu.Registers.MDR.Data
+	bindings.AcBinding.Set(cpu.Registers.AC)
 	fmt.Printf("Prev ACC: %d - Data: %d = New ACC: %d \n", oldAcc, cpu.Registers.MDR.Data, cpu.Registers.AC)
 
 }
 
 func print(cpu *CPU) {
-	var name string = getOpcodeName(cpu.Registers.IR.Opcode)
+	var name string = GetOpcodeName(cpu.Registers.IR.Opcode)
 	fmt.Printf("%s: %d\n", name, cpu.Registers.AC)
 }
 
@@ -206,11 +253,13 @@ func halt(cpu *CPU) {
 func jump(cpu *CPU) {
 	logger.Log.Println("INFO: CPU jump()")
 	cpu.Registers.PC = cpu.Registers.MDR.Data
+	bindings.PcBinding.Set(cpu.Registers.PC)
 }
 
 func clear(cpu *CPU) {
 	logger.Log.Println("INFO: CPU clear()")
 	cpu.Registers.AC = 0
+	bindings.AcBinding.Set(cpu.Registers.AC)
 }
 
 // Initialize the CPU with default values
@@ -264,6 +313,13 @@ func (cpu *CPU) Run() {
 				time.Sleep(500 * time.Millisecond)
 				cpu.execute()
 				time.Sleep(500 * time.Millisecond)
+				cpu.InstructionCount += 1
+				bindings.InstructionCount.Set(cpu.InstructionCount)
+				if cpu.EventHandler != nil {
+					logger.Log.Println("INFO: CPU EventHandler()")
+					go cpu.EventHandler(cpu) // Notify the OS about the cycle
+					time.Sleep(250 * time.Millisecond)
+				}
 			}
 		}
 	}
@@ -276,30 +332,3 @@ func (cpu *CPU) Pause() {
 func (cpu *CPU) Resume() {
 	cpu.resumeChan <- true
 }
-
-// func Run(cpu *CPU) {
-// cpu.Memory[0] = 100
-// cpu.Memory[1] = 10
-// cpu.Memory[2] = 20
-// cpu.Memory[3] = 5
-
-// var instructions []Instruction = []Instruction{
-// 	{Opcode: ADD, Operand: 1},
-// 	{Opcode: ADD, Operand: 2},
-// 	{Opcode: SUB, Operand: 3},
-// }
-// cpu.InstructionList = instructions
-
-// for i := 0; i < 100; i++ {
-// 	// Simulated memory containing instructions
-
-// 	for cpu.Registers.PC < len(instructions) {
-// 		cpu.fetch()
-// 		cpu.decode()
-// 		cpu.execute()
-// 		time.Sleep(time.Second * time.Duration(settings.UpdateTimer))
-// 	}
-// 	cpu.Registers.PC = 0
-// 	fmt.Println("New loop")
-
-// }

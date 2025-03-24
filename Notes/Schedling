@@ -1,7 +1,10 @@
 Metrics:
-Tturnaround = Tcompletion − Tarrival
-Tresponse = Tf irstrun − Tarrival
+Tturnaround = Tcompletion − Tarrival : Time it took to complete.
+Tresponse = Tfirstrun − Tarrival : Time in queue before first run.
 Fairness
+Waiting Time : Time in queue
+
+Amount of Context swtiches
 
 
 First In, First Out (FIFO)

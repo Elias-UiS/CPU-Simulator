@@ -1,126 +1,209 @@
 package dashboard
 
-// // setupMemoryTest initializes the UI for memory visualization.
-// // func setupProcessorTab(os *os.OS) fyne.CanvasObject {
-// // 	// Running
+import (
+	"CPU-Simulator/simulator/pkg/logger"
+	"CPU-Simulator/simulator/pkg/os"
+	"CPU-Simulator/simulator/pkg/processes"
+	"fmt"
+	"sort"
+	"time"
 
-// // 	// IN queue (queue list)
-// // 	// Click to show information
-// // 	// Also shows virtual memory os said processor
-// // }
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/widget"
+)
 
-// import (
-// 	"CPU-Simulator/simulator/pkg/memory"
-// 	"CPU-Simulator/simulator/pkg/processes"
-// 	"strconv"
+var selectedProcess *processes.PCB
+var virtualPagesListView *widget.List
+var virtualPagesListViewContainer *container.Scroll
+var virtualPagesEntriesView *widget.List
+var listOfMemoryFrames [][]uint32
+var pageInfoLabel *widget.Label
 
-// 	"time"
+// Function to create the PCB UI
+func CreatePCBUI(os *os.OS, processTable *processes.ProcessTable) fyne.CanvasObject {
+	if processTable.ProcessMap == nil {
+		logger.Log.Println("processList is empty")
+		return widget.NewLabel("Error: Process list is nil")
+	}
 
-// 	"fyne.io/fyne/v2"
-// 	"fyne.io/fyne/v2/container"
-// 	"fyne.io/fyne/v2/data/binding"
-// 	"fyne.io/fyne/v2/widget"
-// )
+	// Left side: List of processes
+	processListWidget := widget.NewList(
+		func() int {
+			return len(processTable.ProcessMap) // Number of processes
+		},
+		func() fyne.CanvasObject {
+			return widget.NewLabel("Process ID | Process Name") // Updated header
+		},
+		func(i widget.ListItemID, obj fyne.CanvasObject) {
+			keys := getProcessKeys(*processTable)
+			selectedProcess = (processTable.ProcessMap)[keys[i]]
+			// Displaying Process ID and Process Name
+			obj.(*widget.Label).SetText(fmt.Sprintf("%d | %s", selectedProcess.Pid, selectedProcess.Name))
+		},
+	)
 
-// // setupMemoryTest initializes the UI for memory visualization.
-// func setupProcessTab(pcb *map[uint32]*processes.PCB) fyne.CanvasObject {
-// 	// Create a binding for the selected frame values
-// 	frameValuesBinding := binding.NewStringList()
-// 	// Right list: displays the bound frame values
-// 	rightList := widget.NewListWithData(frameValuesBinding,
-// 		func(item binding.DataItem, obj fyne.CanvasObject) {
-// 			// We need to access the HBox container to get its objects
-// 			hbox := obj.(*fyne.Container)
-// 			label := hbox.Objects[0].(*widget.Label) // Access the Label
+	// Right side: Process Details
+	infoLabel := widget.NewLabel("Select a process to see details")
+	pageInfoLabel = widget.NewLabel("Select a page to see details")
 
-// 			// Bind the text of the label to the corresponding item in the frameValuesBinding
-// 			label.Bind(item.(binding.String))
+	virtualPagesListView = widget.NewList(
+		func() int {
+			return 0 // Show one entry when no process is selected
+		},
+		func() fyne.CanvasObject {
+			return widget.NewLabel("No process selected")
+		},
+		func(i widget.ListItemID, obj fyne.CanvasObject) {
+			obj.(*widget.Label).SetText("No process selected")
+		},
+	)
+	virtualPagesListViewContainer = container.NewVScroll(virtualPagesListView)
+	virtualPagesListViewContainer.SetMinSize(fyne.NewSize(400, 300))
+	// Handle selection
+	processListWidget.OnSelected = func(id widget.ListItemID) {
+		keys := getProcessKeys(*processTable)
+		selectedProcess = (processTable.ProcessMap)[keys[id]]
+		infoLabel.SetText(formatPCBDetails(selectedProcess))
+		updateVirtualPagesListView(os)
+	}
 
-// 			// Set the OnTapped function for the button to copy the label text
-// 		})
+	// Auto-refresh mechanism
+	go autoRefreshProcessList(processListWidget, *processTable)
 
-// 	// Left list: displays the frames available
-// 	pcbListBinding := binding.NewStringList() // Binding for the left list
-// 	updatepcbListBinding(pcbListBinding, pcb) // Set initial data for frame list
+	// Layout: Split into two sections
+	split2 := container.NewHSplit(
+		container.NewVBox(infoLabel, virtualPagesListViewContainer),
+		pageInfoLabel,
+	)
+	split := container.NewHSplit(
+		processListWidget, // Left: List of processes
+		split2,
+	)
+	//split.SetOffset(0.3) // Adjust ratio
 
-// 	// Create the frame list with bindings
-// 	pcbList := widget.NewListWithData(pcbListBinding,
-// 		func() fyne.CanvasObject {
-// 			return widget.NewLabel("")
-// 		},
-// 		func(item binding.DataItem, obj fyne.CanvasObject) {
-// 			obj.(*widget.Label).Bind(item.(binding.String))
-// 		},
-// 	)
+	return split
+}
 
-// 	// Track which frame is currently selected
-// 	selectedPcb := binding.NewInt() // Binding to store selected frame index
+// Helper: Get process keys
+func getProcessKeys(processTable processes.ProcessTable) []int {
+	keys := make([]int, 0, len(processTable.ProcessMap))
+	for k := range processTable.ProcessMap {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] }) // Ensure consistent order
+	return keys
+}
 
-// 	// When a frame is selected, bind it to the right list
-// 	pcbList.OnSelected = func(index int) {
-// 		selectedPcb.Set(index) // Store selected frame index
-// 		// Automatically update the right list with selected frame values
-// 		updatePcbValuesBinding(index, frameValuesBinding, pcb)
-// 	}
+// Helper: Format PCB details
+func formatPCBDetails(pcb *processes.PCB) string {
+	return fmt.Sprintf("PID: %d\nName: %s\nState: %s\nPriority: %d\nPC: %d\nAC: %d\nNextFreeCodeAddress: %d\nPageAmount: %d\n",
+		pcb.Pid, pcb.Name, pcb.State.String(), pcb.Priority, pcb.ProcessState.PC, pcb.ProcessState.AC, pcb.NextFreeCodeAddress, pcb.PageAmount,
+	)
+}
 
-// 	// Top container: holds the button
-// 	topContainer := container.NewVBox()
+// Auto-refresh function
+func autoRefreshProcessList(list *widget.List, processTable processes.ProcessTable) {
+	// Only refresh if there is any change in the process list
+	lastLen := len(processTable.ProcessMap)
+	for {
+		time.Sleep(1 * time.Second) // Refresh every second
+		// Only refresh if the length of the process list has changed
+		if len(processTable.ProcessMap) != lastLen {
+			list.Refresh()
+			lastLen = len(processTable.ProcessMap)
+		}
+	}
+}
 
-// 	// Main split: left for frame list, right for value list
-// 	split := container.NewHSplit(pcbList, rightList)
-// 	split.SetOffset(0.3)
+func updateVirtualPagesListView(os *os.OS) {
+	if selectedProcess == nil {
+		return
+	}
 
-// 	// Overall layout: buttons at top and then split container
-// 	content := container.NewBorder(topContainer, nil, nil, nil, split)
+	// Clear previous memory frames
+	listOfMemoryFrames = nil
 
-// 	// Start periodic updates for the selected frame every 100ms
-// 	go updateFrameValuesPeriodically(frameValuesBinding, selectedPcb, pcb)
+	// Create a list of virtual page numbers (VPN)
+	vpnList := []uint32{}
+	for i := 0; i < selectedProcess.PageAmount; i++ {
+		entry := selectedProcess.PageTable.Entries[uint16(i)]
+		vpnList = append(vpnList, entry.FrameNumber)
+	}
+	logger.Log.Println("vpnList:", vpnList)
 
-// 	return content
-// }
+	// Map VPN to memory frames (if any)
+	for _, vpn := range vpnList {
+		if vpn < uint32(len(os.Memory.Frames)) { // Ensure the frame exists
+			listOfMemoryFrames = append(listOfMemoryFrames, os.Memory.Frames[vpn])
+		}
+	}
+	logger.Log.Println("listOfMemoryFrames:", len(listOfMemoryFrames))
 
-// // updateFrameListBinding updates the left list UI when the pcb entries change
-// func updatePcbListBinding(pcbListBinding binding.StringList, pcb *map[uint32]*processes.PCB) {
-// 	// Create a new list to hold the frame labels
-// 	frameLabels := make([]string, len(*pcb))
-// 	counter := 0
-// 	for _, value := range *pcb {
-// 		// Set the frame list labels based on memory frames
-// 		frameLabels[counter] = value.Name + " " + strconv.Itoa(value.Pid)
-// 		counter += 1
-// 	}
-// 	// Bind the frame labels data to the frame list directly
-// 	pcbListBinding.Set(frameLabels)
-// }
+	// Initialize virtualPagesEntriesView (List of entries within selected frame)
+	virtualPagesEntriesView = widget.NewList(
+		func() int {
+			if len(listOfMemoryFrames) > 0 {
+				// Return the number of entries in the selected memory frame
+				return len(listOfMemoryFrames[0]) // Assuming the first frame is selected
+			}
+			return 0 // No entries if no memory frames
+		},
+		func() fyne.CanvasObject {
+			return widget.NewLabel("No entries available")
+		},
+		func(i widget.ListItemID, obj fyne.CanvasObject) {
+			if len(listOfMemoryFrames) > 0 {
+				selectedFrame := listOfMemoryFrames[0] // Use the first frame for simplicity
+				// Update the label with the entry data
+				obj.(*widget.Label).SetText(fmt.Sprintf("Entry: %d", selectedFrame[i])) // Display each entry
+			}
+		},
+	)
 
-// // Convert []uint32 to []string
-// func getStringList(data []uint32) []string {
-// 	strData := make([]string, len(data))
-// 	for i, v := range data {
-// 		strData[i] = strconv.Itoa(int(v))
-// 	}
-// 	return strData
-// }
+	// Update virtualPagesListView with vpnList data
+	virtualPagesListView.Length = func() int {
+		return len(vpnList) // Dynamic size based on vpnList
+	}
 
-// // updateFrameValuesBinding updates the right list UI when Frames is changed.
-// func updatepcbValuesBinding(index int, frameValuesBinding binding.StringList, mem *memory.Memory) {
-// 	// This will automatically update the values when the selected frame changes
-// 	if index >= 0 && index < len(c.Frames) {
-// 		frameValuesBinding.Set(getStringList(mem.Frames[index]))
-// 	}
-// }
+	virtualPagesListView.UpdateItem = func(i widget.ListItemID, obj fyne.CanvasObject) {
+		// Update the list item with the correct details
+		entry := selectedProcess.PageTable.Entries[uint16(i)]
+		obj.(*widget.Label).SetText(fmt.Sprintf("VPN: %d | Entry: %d", entry.FrameNumber, entry.Type))
+	}
 
-// // updateFrameValuesPeriodically updates the right list UI every 100ms.
-// func updatePcbValuesPeriodically(pcbValuesBinding binding.StringList, selectedPcb binding.Int, pcb *map[uint32]*processes.PCB) {
-// 	for {
-// 		// Sleep for 100ms before updating again
-// 		time.Sleep(100 * time.Millisecond)
+	// Handle selection in the virtualPagesListView
+	virtualPagesListView.OnSelected = func(id widget.ListItemID) {
+		// When an item is selected, get the memory frame details
+		selectedFrame := listOfMemoryFrames[id]
+		// Show details of the selected memory frame
+		logger.Log.Println("Selected Memory Frame:", selectedFrame)
+		updateVirtualPagesEntriesView(os, selectedFrame)
+		// Here you can create a label or a dialog to display the details of the selected frame
+		pageInfoLabel.SetText(fmt.Sprintf("Selected Memory Frame: %v", selectedFrame))
+	}
 
-// 		// Get the currently selected frame index
-// 		index, _ := selectedPcb.Get()
-// 		if index >= 0 && index < len(*pcb) {
-// 			// Automatically update the right list with selected frame values
-// 			pcbValuesBinding.Set(getString(mem.Frames[index]))
-// 		}
-// 	}
-// }
+	// Refresh both list views to show updated data
+	virtualPagesListView.Refresh()
+	virtualPagesEntriesView.Refresh() // Refresh entries view
+}
+
+func updateVirtualPagesEntriesView(os *os.OS, frame []uint32) {
+	// Initialize the virtualPagesEntriesView (List of entries within the selected memory frame)
+	virtualPagesEntriesView = widget.NewList(
+		func() int {
+			// Return the number of entries in the selected memory frame
+			return len(frame)
+		},
+		func() fyne.CanvasObject {
+			return widget.NewLabel("No entries available") // Default label if no entries
+		},
+		func(i widget.ListItemID, obj fyne.CanvasObject) {
+			// Display each entry in the selected frame
+			obj.(*widget.Label).SetText(fmt.Sprintf("Entry: %d", frame[i])) // Display each entry as a new line
+		},
+	)
+
+	// Refresh the virtualPagesEntriesView to show updated data
+	virtualPagesEntriesView.Refresh()
+}

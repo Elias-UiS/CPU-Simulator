@@ -4,21 +4,29 @@ import (
 	"CPU-Simulator/simulator/pkg/cpu"
 	"CPU-Simulator/simulator/pkg/logger"
 	"CPU-Simulator/simulator/pkg/memory"
+	"CPU-Simulator/simulator/pkg/metrics"
 	"CPU-Simulator/simulator/pkg/processes"
 	"fmt"
+	"time"
 )
 
 // Main struct
 type Controller struct {
-	nextFreeID   int
-	ProcessTable *processes.ProcessTable
-	mmu          *memory.MMU
-	freelist     *memory.FreeList
+	nextFreeID      int
+	ProcessTable    *processes.ProcessTable
+	mmu             *memory.MMU
+	freelist        *memory.FreeList
+	InstructionList *[]cpu.Instruction
 }
 
 func (controller *Controller) MakeProcess() (*processes.PCB, error) {
 	logger.Log.Println("INFO: MakeProcess()")
 	pageNum := 3
+	metrics := metrics.Metrics{
+		CreationTime:        time.Now(),
+		WaitingStartTime:    time.Now(),
+		SimulationStartTime: time.Now(),
+	}
 	pcb := &processes.PCB{
 		Pid:          controller.nextFreeID,
 		Name:         "Default",
@@ -29,6 +37,7 @@ func (controller *Controller) MakeProcess() (*processes.PCB, error) {
 		},
 		NextFreeCodeAddress: 0,
 		PageAmount:          3,
+		Metrics:             metrics,
 	}
 	list, err := controller.freelist.AllocateFrame(pageNum)
 	if err != nil {
@@ -115,11 +124,13 @@ func (controller *Controller) StoreInstruction(instruction uint64, id int) {
 }
 
 func createController(mmu *memory.MMU, freelist *memory.FreeList, processTableStruct *processes.ProcessTable) *Controller {
+	instructionList := &[]cpu.Instruction{}
 	controller := Controller{
-		0,
-		processTableStruct,
-		mmu,
-		freelist,
+		nextFreeID:      0,
+		ProcessTable:    processTableStruct,
+		mmu:             mmu,
+		freelist:        freelist,
+		InstructionList: instructionList,
 	}
 	return &controller
 }
@@ -187,4 +198,32 @@ func (controller *Controller) MakeTestProcessBasic2() *processes.PCB {
 	controller.StoreInstruction(instructionJumpBytes, pcb.Pid)
 	fmt.Println(pcb)
 	return pcb
+}
+
+func (controller *Controller) AddInstructionToList(opType int, opCode int, operand int) {
+	instruction := cpu.Instruction{opType, opCode, operand}
+	*controller.InstructionList = append(*controller.InstructionList, instruction)
+}
+
+func (controller *Controller) CreateProcessFromInstructionList(name string) *processes.PCB {
+	process, err := controller.MakeProcess()
+	if err != nil {
+		logger.Log.Printf("DEBUG: CreateProcessFromInstructionList()")
+		return nil
+	}
+
+	process.Name = name
+	//controller.mmu.PageTableForCreation = process.PageTable
+	for _, value := range *controller.InstructionList {
+		instructionInBytes := value.ToInt()
+		controller.StoreInstruction(instructionInBytes, process.Pid)
+	}
+	*controller.InstructionList = []cpu.Instruction{}
+	return process
+}
+
+func (controller *Controller) DeleteInstructionList() {
+
+	*controller.InstructionList = []cpu.Instruction{}
+	return
 }
