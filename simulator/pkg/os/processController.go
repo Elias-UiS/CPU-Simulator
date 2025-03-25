@@ -30,7 +30,7 @@ func (controller *Controller) MakeProcess() (*processes.PCB, error) {
 	pcb := &processes.PCB{
 		Pid:          controller.nextFreeID,
 		Name:         "Default",
-		State:        processes.New,
+		State:        processes.Ready,
 		ProcessState: processes.ProcessState{},
 		PageTable: &memory.PageTable{
 			Entries: make(map[uint16]*memory.PTE),
@@ -54,6 +54,7 @@ func (controller *Controller) MakeProcess() (*processes.PCB, error) {
 		pcb.PageTable.Entries[pcb.PageTable.NextFreeIndex] = pte
 		pcb.PageTable.NextFreeIndex += 1
 	}
+	pcb.ProcessState.SP = 131080
 	controller.ProcessTable.AddProcessToTable(pcb)
 	controller.nextFreeID += 1
 	return pcb, nil
@@ -184,7 +185,7 @@ func (controller *Controller) MakeTestProcessBasic2() *processes.PCB {
 		fmt.Println(err)
 		return nil
 	}
-	pcb.Name = "Increment"
+	pcb.Name = "Increment 2"
 	instructionAdd := cpu.Instruction{0, cpu.ADD, 10}
 	instructionStore := cpu.Instruction{0, cpu.STORE, 65536}
 	instructionJump := cpu.Instruction{0, cpu.JUMP, 0}
@@ -200,6 +201,51 @@ func (controller *Controller) MakeTestProcessBasic2() *processes.PCB {
 	return pcb
 }
 
+func (controller *Controller) MakeTestProcessBasic3() *processes.PCB {
+	logger.Log.Println("INFO: MakeTestProcessBasic3()")
+	pcb, err := controller.MakeProcess()
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
+	pcb.Name = "Increment without jump"
+	instructionAdd := cpu.Instruction{0, cpu.ADD, 10}
+	instructionStore := cpu.Instruction{0, cpu.STORE, 65536}
+
+	instructionAddBytes := instructionAdd.ToInt()
+	instructionStoreBytes := instructionStore.ToInt()
+
+	controller.StoreInstruction(instructionAddBytes, pcb.Pid)
+	controller.StoreInstruction(instructionStoreBytes, pcb.Pid)
+	fmt.Println(pcb)
+	return pcb
+}
+
+func (controller *Controller) MakeTestProcessStackBasic() *processes.PCB {
+	logger.Log.Println("INFO: MakeTestProcessStackBasic()")
+	pcb, err := controller.MakeProcess()
+	if err != nil {
+		fmt.Println(err)
+		return nil
+	}
+	pcb.Name = "Stack Test"
+	instructionPush := cpu.Instruction{0, cpu.PUSH, 10}
+	instructionPush2 := cpu.Instruction{0, cpu.PUSH, 35}
+	instructionPop := cpu.Instruction{0, cpu.POP, 0}
+	instructionJump := cpu.Instruction{0, cpu.JUMP, 0}
+
+	instructionPushytes := instructionPush.ToInt()
+	instructionPush2Bytes := instructionPush2.ToInt()
+	instructionPopBytes := instructionPop.ToInt()
+	instructionJumpBytes := instructionJump.ToInt()
+
+	controller.StoreInstruction(instructionPushytes, pcb.Pid)
+	controller.StoreInstruction(instructionPush2Bytes, pcb.Pid)
+	controller.StoreInstruction(instructionPopBytes, pcb.Pid)
+	controller.StoreInstruction(instructionJumpBytes, pcb.Pid)
+	fmt.Println(pcb)
+	return pcb
+}
 func (controller *Controller) AddInstructionToList(opType int, opCode int, operand int) {
 	instruction := cpu.Instruction{opType, opCode, operand}
 	*controller.InstructionList = append(*controller.InstructionList, instruction)

@@ -97,9 +97,19 @@ func getProcessKeys(processTable processes.ProcessTable) []int {
 
 // Helper: Format PCB details
 func formatPCBDetails(pcb *processes.PCB) string {
-	return fmt.Sprintf("PID: %d\nName: %s\nState: %s\nPriority: %d\nPC: %d\nAC: %d\nNextFreeCodeAddress: %d\nPageAmount: %d\n",
-		pcb.Pid, pcb.Name, pcb.State.String(), pcb.Priority, pcb.ProcessState.PC, pcb.ProcessState.AC, pcb.NextFreeCodeAddress, pcb.PageAmount,
-	)
+	return "PID: " + fmt.Sprintf("%d", pcb.Pid) +
+		"\nName: " + pcb.Name +
+		"\nState: " + pcb.State.String() +
+		"\nPriority: " + fmt.Sprintf("%d", pcb.Priority) +
+		"\nPC: " + fmt.Sprintf("%d", pcb.ProcessState.PC) +
+		"\nAC: " + fmt.Sprintf("%d", pcb.ProcessState.AC) +
+		"\nNextFreeCodeAddress: " + fmt.Sprintf("%d", pcb.NextFreeCodeAddress) +
+		"\nPageAmount: " + fmt.Sprintf("%d", pcb.PageAmount) +
+		"\n" +
+		"\nCPU Time: " + fmt.Sprintf("%.2f", pcb.Metrics.CpuTime.Seconds()) +
+		"\nResponse Time: " + fmt.Sprintf("%.2f", pcb.Metrics.ResponseTime.Seconds()) +
+		"\nTurnaround Time: " + fmt.Sprintf("%.2f", pcb.Metrics.TurnaroundTime.Seconds()) +
+		"\nWaiting Time: " + fmt.Sprintf("%.2f", pcb.Metrics.WaitingTime.Seconds())
 }
 
 // Auto-refresh function

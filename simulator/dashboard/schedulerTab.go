@@ -133,7 +133,7 @@ func updateReadyQueueContent(contentContainer *fyne.Container, scheduler schedul
 // Auto-refresh function
 func autoRefreshReadyQueue(contentContainer *fyne.Container, scheduler scheduler.SchedulerInterface) {
 	for {
-		time.Sleep(1000 * time.Millisecond)                  // Refresh every second
+		time.Sleep(300 * time.Millisecond)                   // Refresh every second
 		updateReadyQueueContent(contentContainer, scheduler) // Update the content dynamically
 	}
 }

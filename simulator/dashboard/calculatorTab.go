@@ -183,16 +183,6 @@ func setupCalculatorTab() fyne.CanvasObject {
 		addressContainer,
 		vpnOffsetResult,
 		bumpRow,
-		bumpRow,
-		bumpRow,
-		bumpRow,
-		bumpRow,
-		bumpRow,
-		bumpRow,
-		bumpRow,
-		bumpRow,
-		bumpRow,
-		bumpRow,
 	)
 
 	// Combine both vertical containers in a horizontal container.

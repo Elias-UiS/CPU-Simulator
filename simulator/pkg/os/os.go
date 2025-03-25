@@ -67,7 +67,8 @@ func (os *OS) StartSimulation() {
 
 	pcb := os.ProcessController.MakeTestProcessBasic()
 	pcb2 := os.ProcessController.MakeTestProcessBasic2()
-	pcb3 := os.ProcessController.MakeTestProcessBasic()
+	pcb3 := os.ProcessController.MakeTestProcessBasic3()
+	pcb4 := os.ProcessController.MakeTestProcessStackBasic()
 
 	// os.AddProcessToProcessTable(pcb)
 	// os.AddProcessToProcessTable(pcb2)
@@ -76,11 +77,13 @@ func (os *OS) StartSimulation() {
 	os.AddProcessToSchedulerQueue(pcb)
 	os.AddProcessToSchedulerQueue(pcb2)
 	os.AddProcessToSchedulerQueue(pcb3)
+	os.AddProcessToSchedulerQueue(pcb4)
 
 	nextPcb := os.Scheduler.GetNextProcess()
 	os.ProcessController.SetPageTabletoMMU(nextPcb)
 	nextPcb.Metrics.CpuStartTime = time.Now()
 	os.CPU[0].EventHandler = os.OnCPUCycle
+	bindings.NameBinding.Set(nextPcb.Name)
 	go os.CPU[0].Run() // Run CPU in a separate goroutine
 	os.cpuIsRunning = true
 
@@ -162,6 +165,9 @@ func (os *OS) ContextSwitch(cpu *cpu.CPU) {
 
 	cpuTimeAdd := time.Now().Sub(currentProcess.Metrics.CpuStartTime)
 	currentProcess.Metrics.CpuTime += cpuTimeAdd
+	if currentProcess.State == processes.Terminated {
+		currentProcess.Metrics.TurnaroundTime = time.Now().Sub(currentProcess.Metrics.ArrivalTime)
+	}
 	currentProcess.Metrics.WaitingStartTime = time.Now()
 
 	for i := range os.Scheduler.GetReadyQueue() {
@@ -200,6 +206,7 @@ func (os *OS) ContextSwitch(cpu *cpu.CPU) {
 	if os.cpuIsRunning {
 		nextProcess.Metrics.CpuStartTime = time.Now()
 		nextProcess.Metrics.WaitingTime += time.Now().Sub(nextProcess.Metrics.WaitingStartTime)
+		cpu.InstructionCount = 0
 		cpu.Resume()
 	}
 
@@ -221,6 +228,7 @@ func (os *OS) SaveProcessState(pcb *processes.PCB, cpu *cpu.CPU) {
 	pcb.ProcessState.MDROpcode = cpu.Registers.MDR.Instruction.Opcode
 	pcb.ProcessState.MDROperand = cpu.Registers.MDR.Instruction.Operand
 	pcb.ProcessState.PC = cpu.Registers.PC
+	pcb.ProcessState.SP = cpu.Registers.SP
 }
 
 // Function to set the process state of the new scheduled process to the cpu.
@@ -239,6 +247,7 @@ func (os *OS) SetNewProcessState(pcb *processes.PCB, cpu *cpu.CPU) {
 	cpu.Registers.MDR.Instruction.Opcode = pcb.ProcessState.MDROpcode
 	cpu.Registers.MDR.Instruction.Operand = pcb.ProcessState.MDROperand
 	cpu.Registers.PC = pcb.ProcessState.PC
+	cpu.Registers.SP = pcb.ProcessState.SP
 
 	bindings.MdrIsInstructionBinding.Set(cpu.Registers.MDR.IsInstruction)
 	bindings.MdrInstructionOpTypeBinding.Set(cpu.Registers.MDR.Instruction.OpType)
@@ -253,7 +262,9 @@ func (os *OS) SetNewProcessState(pcb *processes.PCB, cpu *cpu.CPU) {
 	bindings.MarBinding.Set(cpu.Registers.MAR)
 	bindings.AcBinding.Set(cpu.Registers.AC)
 	bindings.PcBinding.Set(cpu.Registers.PC)
+	bindings.PcBinding.Set(cpu.Registers.SP)
 
+	bindings.NameBinding.Set(pcb.Name)
 }
 
 func (os *OS) GetCpu() *cpu.CPU {
@@ -290,11 +301,32 @@ func (os *OS) OnCPUCycle(cpu *cpu.CPU) {
 	pcb := os.Scheduler.GetRunningProcess()
 	pcb.Metrics.InstructionAmount += 1
 	logger.Log.Println("OS: CPU cycle completed.")
+
+	pc := cpu.Registers.PC
+	phys, err := os.MMU.TranslateAddress(uint32(pc))
+	if err != nil {
+		logger.Log.Println("Error: OS | OnCPUCycle | TranslateAddress\n", err)
+		return
+	}
+	instruction, err := os.MMU.Read(uint32(phys))
+	if err != nil {
+		logger.Log.Println("Error: OS | OnCPUCycle | Read\n", err)
+		return
+	}
+	if instruction == 0 {
+		pcb.State = processes.Terminated
+		logger.Log.Println("OS: Process terminated.")
+		cpu.Pause()
+		cpu.InstructionCount = 0
+
+		go os.ContextSwitch(cpu)
+	}
 	if cpu.InstructionCount >= 6 {
 		logger.Log.Println("OS: Exceeded instruction count per process instance.")
 		logger.Log.Println("OS: Performing context switch.")
 		cpu.Pause()
 		cpu.InstructionCount = 0
+		bindings.InstructionCount.Set(cpu.InstructionCount)
 		go os.ContextSwitch(cpu)
 	} else {
 		logger.Log.Println("OS: Continuing execution.")

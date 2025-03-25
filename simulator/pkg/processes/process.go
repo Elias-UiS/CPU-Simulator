@@ -34,7 +34,7 @@ func (s State) String() string {
 }
 
 type ProcessState struct {
-	StackPointer uint32 // Address of the top of the stack
+	SP int // Address of the top of the stack
 
 	PC  int // Program Pointer			| Holds address
 	AC  int // Accumulator

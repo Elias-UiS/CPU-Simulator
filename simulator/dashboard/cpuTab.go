@@ -20,8 +20,9 @@ func setupCpuTab(os *os.OS) fyne.CanvasObject {
 	}
 
 	// Define register labels and corresponding bindings
-	labels := []string{"PC:", "AC:", "MAR:", "OpType:", "Opcode:", "Operand:", "IsInstruction:", "Data:", "Instruction Count:"}
+	labels := []string{"Name:", "PC:", "AC:", "MAR:", "OpType:", "Opcode:", "Operand:", "IsInstruction:", "Data:", "Instruction Count:", "SP:"}
 	values := []binding.DataItem{
+		bindings.NameBinding,
 		binding.IntToString(bindings.PcBinding),
 		binding.IntToString(bindings.AcBinding),
 		binding.IntToString(bindings.MarBinding),
@@ -31,6 +32,7 @@ func setupCpuTab(os *os.OS) fyne.CanvasObject {
 		binding.BoolToString(bindings.MdrIsInstructionBinding),
 		binding.IntToString(bindings.MdrDataBinding),
 		binding.IntToString(bindings.InstructionCount),
+		binding.IntToString(bindings.SpBinding),
 	}
 
 	// Create the table

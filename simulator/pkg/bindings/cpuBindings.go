@@ -6,6 +6,7 @@ import "fyne.io/fyne/v2/data/binding"
 var PcBinding binding.Int = binding.NewInt()
 var AcBinding binding.Int = binding.NewInt()
 var MarBinding binding.Int = binding.NewInt()
+var SpBinding binding.Int = binding.NewInt()
 
 var InstructionOpTypeBinding binding.Int = binding.NewInt()
 var InstructionOpCodeBinding binding.Int = binding.NewInt()
@@ -18,6 +19,8 @@ var MdrInstructionOperandBinding binding.Int = binding.NewInt()
 var MdrDataBinding binding.Int = binding.NewInt()
 
 var InstructionCount binding.Int = binding.NewInt()
+
+var NameBinding binding.String = binding.NewString()
 
 /////////// Copy Pastes for updating bindings ///////////
 

@@ -10,14 +10,16 @@ import (
 
 // Instruction Opcodes
 const (
-	ADD   = 1 // Adds value to the accumulator
-	SUB   = 2 // Subtracts value from the accumulator
-	STORE = 3 // Store value in accumulator to a memory address
-	PRINT = 4 // Print the value of a register
-	HALT  = 5 // Stop execution
-	JUMP  = 6 // Sets the PC to a specific address
-	LOAD  = 7 // Loads the data from an address to the accumulator
-	CLEAR = 8 // Clears the accumulator		| Sets the accumulator to 0
+	ADD   = 1  // Adds value to the accumulator
+	SUB   = 2  // Subtracts value from the accumulator
+	STORE = 3  // Store value in accumulator to a memory address
+	PRINT = 4  // Print the value of a register
+	HALT  = 5  // Stop execution
+	JUMP  = 6  // Sets the PC to a specific address
+	LOAD  = 7  // Loads the data from an address to the accumulator
+	CLEAR = 8  // Clears the accumulator		| Sets the accumulator to 0
+	PUSH  = 9  // Pushes the value to the stack
+	POP   = 10 // Pops the value from the stack
 )
 
 var OpcodeNames = map[int]string{
@@ -29,6 +31,8 @@ var OpcodeNames = map[int]string{
 	JUMP:  "JUMP",
 	LOAD:  "LOAD",
 	CLEAR: "CLEAR",
+	PUSH:  "PUSH",
+	POP:   "POP",
 }
 
 var OpcodeValues = map[string]int{
@@ -40,6 +44,8 @@ var OpcodeValues = map[string]int{
 	"JUMP":  JUMP,
 	"LOAD":  LOAD,
 	"CLEAR": CLEAR,
+	"PUSH":  PUSH,
+	"POP":   POP,
 }
 
 // Instruction represents a single CPU instruction.
@@ -80,7 +86,7 @@ type Registers struct {
 	MAR int // Memory Address Registers | Holds address
 	MDR MDR // Memory Data Registers	| Holds instruction
 
-	//SP int // Stack Pointer
+	SP int // Stack Pointer
 	//SR int // Status Register/Flags
 }
 
@@ -111,6 +117,8 @@ func (cpu *CPU) fetch() {
 	cpu.Registers.MAR = physicalAddr
 	bindings.MarBinding.Set(cpu.Registers.MAR)
 
+	time.Sleep(100 * time.Millisecond)
+
 	instructionBits, err := cpu.mmu.Read(uint32(cpu.Registers.MAR))
 	if physicalAddr == -1 {
 		fmt.Println(err)
@@ -127,6 +135,7 @@ func (cpu *CPU) fetch() {
 	}
 	cpu.Registers.MAR = physicalAddr2
 	bindings.MarBinding.Set(cpu.Registers.MAR)
+	time.Sleep(100 * time.Millisecond)
 	addressBits, err := cpu.mmu.Read(uint32(cpu.Registers.MAR))
 	if physicalAddr == -1 {
 		fmt.Println(err)
@@ -143,6 +152,7 @@ func (cpu *CPU) fetch() {
 	bindings.MdrInstructionOpCodeBinding.Set(cpu.Registers.MDR.Instruction.Opcode)
 	bindings.MdrInstructionOperandBinding.Set(cpu.Registers.MDR.Instruction.Operand)
 	bindings.MdrDataBinding.Set(cpu.Registers.MDR.Data)
+	time.Sleep(100 * time.Millisecond)
 
 	if cpu.Registers.MDR.IsInstruction {
 		cpu.Registers.IR = cpu.Registers.MDR.Instruction
@@ -150,9 +160,11 @@ func (cpu *CPU) fetch() {
 		bindings.InstructionOpCodeBinding.Set(cpu.Registers.IR.Opcode)
 		bindings.InstructionOperandBinding.Set(cpu.Registers.IR.Operand)
 	}
-	cpu.Registers.PC += 2
+	time.Sleep(100 * time.Millisecond)
 
+	cpu.Registers.PC += 2
 	bindings.PcBinding.Set(cpu.Registers.PC) // Update binding
+	time.Sleep(100 * time.Millisecond)
 }
 
 func (cpu *CPU) decode() {
@@ -172,6 +184,7 @@ func (cpu *CPU) decode() {
 		cpu.Registers.MAR = cpu.Registers.IR.Operand
 		bindings.MarBinding.Set(cpu.Registers.MAR)
 	}
+	time.Sleep(100 * time.Millisecond)
 
 }
 
@@ -190,6 +203,7 @@ func (cpu *CPU) execute() {
 		bindings.MdrInstructionOpCodeBinding.Set(cpu.Registers.MDR.Instruction.Opcode)
 		bindings.MdrInstructionOperandBinding.Set(cpu.Registers.MDR.Instruction.Operand)
 		bindings.MdrDataBinding.Set(cpu.Registers.MDR.Data)
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	var opcode int = cpu.Registers.IR.Opcode
@@ -262,6 +276,47 @@ func clear(cpu *CPU) {
 	bindings.AcBinding.Set(cpu.Registers.AC)
 }
 
+func push(cpu *CPU) {
+	logger.Log.Println("INFO: CPU push()")
+
+	cpu.Registers.SP -= 1
+	bindings.SpBinding.Set(cpu.Registers.SP)
+
+	value := cpu.Registers.MDR.Data
+	destination := cpu.Registers.SP
+	physAddr, err := cpu.mmu.TranslateAddress(uint32(destination))
+	if err != nil {
+		logger.Log.Printf("ERROR: push() %s", err)
+		return
+	}
+	cpu.mmu.Write(uint32(physAddr), uint32(value))
+	logger.Log.Println(physAddr)
+	logger.Log.Println(value)
+
+}
+
+func pop(cpu *CPU) {
+	logger.Log.Println("INFO: CPU pop()")
+
+	destination := cpu.Registers.SP
+	physAddr, err := cpu.mmu.TranslateAddress(uint32(destination))
+	if err != nil {
+		logger.Log.Printf("ERROR: pop() %s", err)
+		return
+	}
+	value, err := cpu.mmu.Read(uint32(physAddr))
+	if err != nil {
+		logger.Log.Printf("ERROR: pop() %s", err)
+		return
+	}
+	logger.Log.Println(value)
+	cpu.Registers.AC = value
+	bindings.AcBinding.Set(cpu.Registers.AC)
+
+	cpu.Registers.SP += 1
+	bindings.SpBinding.Set(cpu.Registers.SP)
+}
+
 // Initialize the CPU with default values
 func NewCPU(mmu *memory.MMU) *CPU {
 	logger.Log.Println("INFO: CPU New()")
@@ -278,6 +333,8 @@ func NewCPU(mmu *memory.MMU) *CPU {
 	cpu.registerOpcode(STORE, store)
 	cpu.registerOpcode(JUMP, jump)
 	cpu.registerOpcode(CLEAR, clear)
+	cpu.registerOpcode(PUSH, push)
+	cpu.registerOpcode(POP, pop)
 
 	return cpu
 }
