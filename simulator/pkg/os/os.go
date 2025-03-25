@@ -22,6 +22,7 @@ type OS struct {
 	osIsRunning       bool
 	cpuIsRunning      bool
 	Test              int
+	StepMode          bool
 }
 
 func NewOS() *OS {
@@ -87,17 +88,6 @@ func (os *OS) StartSimulation() {
 	go os.CPU[0].Run() // Run CPU in a separate goroutine
 	os.cpuIsRunning = true
 
-	// For testing REMOVE later
-	logger.Log.Println("Number of free Fames", os.FreeList.NumberOfFreeFrames)
-	os.Memory.Frames[15][0] = 50
-	os.Memory.Frames[15][6] = 50
-	queue := os.Scheduler.GetReadyQueue()
-	logger.Log.Println("Info: Checking Ready Queue")
-	for i := range len(queue) {
-		logger.Log.Println(queue[i])
-	}
-	/////
-
 }
 
 func (os *OS) PauseSimulation() {
@@ -149,6 +139,7 @@ func (os *OS) Reset() {
 
 func (os *OS) ContextSwitch(cpu *cpu.CPU) {
 	logger.Log.Println("Performing context switch...")
+
 	if !cpu.IsPaused {
 		cpu.Pause()
 	}
@@ -207,7 +198,10 @@ func (os *OS) ContextSwitch(cpu *cpu.CPU) {
 		nextProcess.Metrics.CpuStartTime = time.Now()
 		nextProcess.Metrics.WaitingTime += time.Now().Sub(nextProcess.Metrics.WaitingStartTime)
 		cpu.InstructionCount = 0
-		cpu.Resume()
+		if !os.StepMode {
+			cpu.Resume()
+		}
+		os.cpuIsRunning = false
 	}
 
 }
@@ -330,7 +324,12 @@ func (os *OS) OnCPUCycle(cpu *cpu.CPU) {
 		go os.ContextSwitch(cpu)
 	} else {
 		logger.Log.Println("OS: Continuing execution.")
+		if os.StepMode {
+			os.cpuIsRunning = false
+			cpu.Pause()
+		}
 	}
+
 }
 
 func (os *OS) UpdateMetricsPause() {

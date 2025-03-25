@@ -127,7 +127,9 @@ func Dashboard(dash *DashboardStruct) {
 	})
 
 	nextStepSimulationButton := widget.NewButton("Next Step", func() {
-		fmt.Println("test")
+		os.StepMode = true
+		go os.ResumeSimulation()
+		status.SetText("Step Mode")
 	})
 
 	nextProcessSimulationButton := widget.NewButton("Next Process", func() {
