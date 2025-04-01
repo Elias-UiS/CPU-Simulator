@@ -11,8 +11,8 @@ const (
 
 // kan endre til å lagre bits?
 type PTE struct { // Page table entry
-	//Valid       bool   // Page is valid in memory
-	FrameNumber uint32 // Physical frame number
+	Valid       bool // Page is mapped or not
+	FrameNumber int  // Physical frame number
 	Type        PageType
 	//Dirty       bool   // Modified flag
 	//Referenced  bool   // Recently accessed flag
@@ -20,6 +20,5 @@ type PTE struct { // Page table entry
 }
 
 type PageTable struct {
-	Entries       map[uint16]*PTE // Maps virtual page numbers to PTEs
-	NextFreeIndex uint16          // Temp solution
+	Entries map[int]*PTE // Maps virtual page numbers to PTEs
 }

@@ -137,8 +137,8 @@ func updateVirtualPagesListView(os *os.OS) {
 	// Create a list of virtual page numbers (VPN)
 	vpnList := []uint32{}
 	for i := 0; i < selectedProcess.PageAmount; i++ {
-		entry := selectedProcess.PageTable.Entries[uint16(i)]
-		vpnList = append(vpnList, entry.FrameNumber)
+		entry := selectedProcess.PageTable.Entries[i]
+		vpnList = append(vpnList, uint32(entry.FrameNumber))
 	}
 	logger.Log.Println("vpnList:", vpnList)
 
@@ -178,8 +178,8 @@ func updateVirtualPagesListView(os *os.OS) {
 
 	virtualPagesListView.UpdateItem = func(i widget.ListItemID, obj fyne.CanvasObject) {
 		// Update the list item with the correct details
-		entry := selectedProcess.PageTable.Entries[uint16(i)]
-		obj.(*widget.Label).SetText(fmt.Sprintf("VPN: %d | Entry: %d", entry.FrameNumber, entry.Type))
+		entry := selectedProcess.PageTable.Entries[i]
+		obj.(*widget.Label).SetText(fmt.Sprintf("VPN: %d | Frame: %d | Valid: %t", i, entry.FrameNumber, entry.Valid))
 	}
 
 	// Handle selection in the virtualPagesListView

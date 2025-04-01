@@ -44,5 +44,8 @@ Dermed kan jeg lage en enklere "minne" bytte modul.
 
 
 Til i morgen:
-Fortsett med process.go
-Få til en måte å se minne på, og starte den prossesn.
+
+
+PageFaultHandler freezer
+fix
+

@@ -3,6 +3,7 @@ package dashboard
 import (
 	"CPU-Simulator/simulator/pkg/logger"
 	"CPU-Simulator/simulator/pkg/os"
+	"CPU-Simulator/simulator/pkg/systemState"
 	"fmt"
 	"time"
 
@@ -13,18 +14,10 @@ import (
 )
 
 type DashboardStruct struct {
-	IsRunnning bool
-	clock      int // In seconds
+	SystemState systemState.State
+	IsRunnning  bool
+	clock       int // In seconds
 }
-
-// func updateTime(clock *widget.Label, start time.Time) {
-// 	elapsed := time.Since(start)
-// 	elapsedStr := fmt.Sprintf("%02d:%02d:%02d",
-// 		int(elapsed.Hours())%24,
-// 		int(elapsed.Minutes())%60,
-// 		int(elapsed.Seconds())%60)
-// 	clock.SetText(elapsedStr)
-// }
 
 func (dash *DashboardStruct) startClock(clock *widget.Label) {
 	for {
@@ -100,6 +93,7 @@ func Dashboard(dash *DashboardStruct) {
 		os.StartSimulation()
 		status.SetText("Running")
 		dash.IsRunnning = true
+		go dash.SystemState.UpdateState(os)
 	})
 
 	stopSimulationButton := widget.NewButton("Stop", func() {
@@ -127,6 +121,9 @@ func Dashboard(dash *DashboardStruct) {
 	})
 
 	nextStepSimulationButton := widget.NewButton("Next Step", func() {
+		if dash.IsRunnning {
+			return
+		}
 		os.StepMode = true
 		go os.ResumeSimulation()
 		status.SetText("Step Mode")
@@ -134,6 +131,9 @@ func Dashboard(dash *DashboardStruct) {
 
 	nextProcessSimulationButton := widget.NewButton("Next Process", func() {
 		fmt.Println("test")
+		if os.MidContextSwitch {
+			return
+		}
 		os.ContextSwitch(os.GetCpu())
 	})
 
@@ -153,8 +153,8 @@ func Dashboard(dash *DashboardStruct) {
 	processes := container.NewTabItem("Processes", CreatePCBUI(os, os.ProcessTable))
 	scheduler := container.NewTabItem("Scheduler", CreateSchedulerTab(os.Scheduler))
 	calculator := container.NewTabItem("Calculator", setupCalculatorTab())
-	test := container.NewTabItem("TestBindings", TestBinding(os))
 	processCreation := container.NewTabItem("Process Creator", ProcessCreationTab(os))
+	systemState := container.NewTabItem("System State", setupSystemStateTab(dash.SystemState.PubSub))
 
 	tabs := container.NewAppTabs(
 		cpu,
@@ -165,7 +165,7 @@ func Dashboard(dash *DashboardStruct) {
 		scheduler,
 		calculator,
 		processCreation,
-		test,
+		systemState,
 	)
 
 	tabsContainer := container.NewStack(tabs)

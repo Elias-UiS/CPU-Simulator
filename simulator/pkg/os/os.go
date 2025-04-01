@@ -7,7 +7,9 @@ import (
 	"CPU-Simulator/simulator/pkg/memory"
 	"CPU-Simulator/simulator/pkg/processes"
 	"CPU-Simulator/simulator/pkg/scheduler"
+	"CPU-Simulator/simulator/pkg/settings"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -23,6 +25,8 @@ type OS struct {
 	cpuIsRunning      bool
 	Test              int
 	StepMode          bool
+	MidContextSwitch  bool
+	OSMutex           sync.RWMutex
 }
 
 func NewOS() *OS {
@@ -56,6 +60,7 @@ func NewOS() *OS {
 		cpuIsRunning:      false,
 		Scheduler:         scheduler,
 		Test:              10,
+		StepMode:          false,
 	}
 }
 
@@ -65,6 +70,8 @@ func (os *OS) StartSimulation() {
 	}
 	logger.Log.Println("Starting simulation...")
 	os.osIsRunning = true
+
+	os.CPU[0].PageFaultHandler = os.PageFaultHandler
 
 	pcb := os.ProcessController.MakeTestProcessBasic()
 	pcb2 := os.ProcessController.MakeTestProcessBasic2()
@@ -82,6 +89,7 @@ func (os *OS) StartSimulation() {
 
 	nextPcb := os.Scheduler.GetNextProcess()
 	os.ProcessController.SetPageTabletoMMU(nextPcb)
+	os.SetNewProcessState(nextPcb, os.CPU[0])
 	nextPcb.Metrics.CpuStartTime = time.Now()
 	os.CPU[0].EventHandler = os.OnCPUCycle
 	bindings.NameBinding.Set(nextPcb.Name)
@@ -106,6 +114,7 @@ func (os *OS) ResumeSimulation() {
 	if os.cpuIsRunning {
 		return
 	}
+
 	logger.Log.Println("Testing bug here")
 	fmt.Println("Resuming simulation...")
 	for i := range len(os.CPU) {
@@ -117,6 +126,7 @@ func (os *OS) ResumeSimulation() {
 
 		os.Scheduler.GetRunningProcess().Metrics.CpuStartTime = time.Now()
 	}
+	os.StepMode = false
 	os.cpuIsRunning = true
 	os.UpdateMetricsResume()
 }
@@ -139,10 +149,11 @@ func (os *OS) Reset() {
 
 func (os *OS) ContextSwitch(cpu *cpu.CPU) {
 	logger.Log.Println("Performing context switch...")
-
+	os.MidContextSwitch = true
 	if !cpu.IsPaused {
 		cpu.Pause()
 	}
+
 	for i := range os.Scheduler.GetReadyQueue() {
 		logger.Log.Println("Ready Queue list 1: ", os.Scheduler.GetReadyQueue()[i].Pid)
 	}
@@ -151,6 +162,7 @@ func (os *OS) ContextSwitch(cpu *cpu.CPU) {
 	logger.Log.Printf("currentProcess.Pid: %d", currentProcess.Pid)
 	if currentProcess == nil {
 		logger.Log.Println("No processes currently running.")
+		os.MidContextSwitch = false
 		return
 	}
 
@@ -176,6 +188,7 @@ func (os *OS) ContextSwitch(cpu *cpu.CPU) {
 
 	if nextProcess == nil {
 		logger.Log.Println("No processes in the ready queue.")
+		os.MidContextSwitch = false
 		return
 	}
 	logger.Log.Printf("nextProcess.Pid: %d", nextProcess.Pid)
@@ -187,22 +200,26 @@ func (os *OS) ContextSwitch(cpu *cpu.CPU) {
 	os.SaveProcessState(currentProcess, cpu) // Saves the process state of pcb from cpu to pcb..
 	os.ProcessController.SetPageTabletoMMU(nextProcess)
 	for index := range len(nextProcess.PageTable.Entries) {
-		logger.Log.Printf("Index: %d, Value: %d\n", index, nextProcess.PageTable.Entries[uint16(index)].FrameNumber)
+		logger.Log.Printf("Index: %d, Value: %d\n", index, nextProcess.PageTable.Entries[index].FrameNumber)
 	}
 	os.SetNewProcessState(nextProcess, cpu) // Sets the process state of pcb to cpu.
 	nextProcess.State = processes.Running
 	if nextProcess.Metrics.ResponseTime == 0 {
 		nextProcess.Metrics.ResponseTime = time.Now().Sub(nextProcess.Metrics.ArrivalTime)
 	}
+	logger.Log.Println("Testing Step 1")
 	if os.cpuIsRunning {
 		nextProcess.Metrics.CpuStartTime = time.Now()
 		nextProcess.Metrics.WaitingTime += time.Now().Sub(nextProcess.Metrics.WaitingStartTime)
 		cpu.InstructionCount = 0
+		logger.Log.Println("Testing Step 2")
 		if !os.StepMode {
 			cpu.Resume()
+			logger.Log.Println("Testing Step 3")
 		}
-		os.cpuIsRunning = false
 	}
+	os.MidContextSwitch = false
+	logger.Log.Println("Testing Step 4")
 
 }
 
@@ -256,9 +273,11 @@ func (os *OS) SetNewProcessState(pcb *processes.PCB, cpu *cpu.CPU) {
 	bindings.MarBinding.Set(cpu.Registers.MAR)
 	bindings.AcBinding.Set(cpu.Registers.AC)
 	bindings.PcBinding.Set(cpu.Registers.PC)
-	bindings.PcBinding.Set(cpu.Registers.SP)
+	bindings.SpBinding.Set(cpu.Registers.SP)
 
 	bindings.NameBinding.Set(pcb.Name)
+	logger.Log.Println("SetNewProcessState END")
+	return
 }
 
 func (os *OS) GetCpu() *cpu.CPU {
@@ -297,10 +316,12 @@ func (os *OS) OnCPUCycle(cpu *cpu.CPU) {
 	logger.Log.Println("OS: CPU cycle completed.")
 
 	pc := cpu.Registers.PC
-	phys, err := os.MMU.TranslateAddress(uint32(pc))
-	if err != nil {
-		logger.Log.Println("Error: OS | OnCPUCycle | TranslateAddress\n", err)
-		return
+	phys, errStruct := os.MMU.TranslateAddress(uint32(pc))
+	if errStruct != nil {
+		logger.Log.Println("Error: OS | OnCPUCycle | TranslateAddress\n", errStruct.Text)
+		pcb.State = processes.Terminated
+		cpu.Pause()
+		os.ContextSwitch(cpu)
 	}
 	instruction, err := os.MMU.Read(uint32(phys))
 	if err != nil {
@@ -310,18 +331,17 @@ func (os *OS) OnCPUCycle(cpu *cpu.CPU) {
 	if instruction == 0 {
 		pcb.State = processes.Terminated
 		logger.Log.Println("OS: Process terminated.")
-		cpu.Pause()
 		cpu.InstructionCount = 0
-
-		go os.ContextSwitch(cpu)
+		cpu.Pause()
+		os.ContextSwitch(cpu)
 	}
-	if cpu.InstructionCount >= 6 {
+	if cpu.InstructionCount >= settings.InstructionLimitPerRun {
 		logger.Log.Println("OS: Exceeded instruction count per process instance.")
 		logger.Log.Println("OS: Performing context switch.")
 		cpu.Pause()
 		cpu.InstructionCount = 0
 		bindings.InstructionCount.Set(cpu.InstructionCount)
-		go os.ContextSwitch(cpu)
+		os.ContextSwitch(cpu)
 	} else {
 		logger.Log.Println("OS: Continuing execution.")
 		if os.StepMode {
@@ -329,6 +349,7 @@ func (os *OS) OnCPUCycle(cpu *cpu.CPU) {
 			cpu.Pause()
 		}
 	}
+	cpu.Resume()
 
 }
 
@@ -355,4 +376,47 @@ func (os *OS) UpdateMetricsResume() {
 	for _, pcb := range os.Scheduler.GetReadyQueue() {
 		pcb.Metrics.WaitingStartTime = time.Now()
 	}
+}
+
+func (os *OS) PageFaultHandler(cpu *cpu.CPU, address uint32, vpn int) error {
+	logger.Log.Println("ERROR: PageFaultHandler()")
+	pcb := os.Scheduler.GetRunningProcess()
+	if pcb.Limits.CodeStart <= address && address <= pcb.Limits.CodeEnd {
+		logger.Log.Println("ERROR: PageFaultHandler() 2")
+		err := os.ProcessController.AllocateFrameToPage(pcb, vpn, 1)
+		pcb.State = processes.Terminated
+		os.ContextSwitch(cpu)
+		return err
+		// This should not happen as code is mapped wholly at creation. The code segment is valid, and won't cause a pagefault.
+	}
+	logger.Log.Println("ERROR: PageFaultHandler() 3")
+	if pcb.Limits.HeapStart <= address && address <= pcb.Limits.HeapEnd {
+		logger.Log.Println("ERROR: PageFaultHandler() 4")
+		stackPointer := cpu.Registers.SP
+		if uint32(stackPointer) == address {
+			pcb.State = processes.Terminated
+			logger.Log.Println("Pausing +1")
+			cpu.Pause()
+			os.ContextSwitch(cpu)
+			return fmt.Errorf("ERROR: Stackpointer pointing outside stack")
+		}
+		err := os.ProcessController.AllocateFrameToPage(pcb, vpn, 1)
+		if err != nil {
+			return err
+		}
+	}
+	if pcb.Limits.StackStart <= address && address <= pcb.Limits.StackEnd {
+		logger.Log.Println("ERROR: PageFaultHandler() 5")
+		err := os.ProcessController.AllocateFrameToPage(pcb, vpn, 1)
+		if err != nil {
+			return err
+		}
+		logger.Log.Println("ERROR: PageFaultHandler() 6")
+		cpu.Resume()
+
+	}
+	logger.Log.Println("ERROR: PageFaultHandler() 7")
+	pcb.State = processes.Terminated
+	os.ContextSwitch(cpu)
+	return nil
 }

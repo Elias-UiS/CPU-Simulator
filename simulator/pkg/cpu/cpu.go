@@ -4,7 +4,10 @@ import (
 	"CPU-Simulator/simulator/pkg/bindings"
 	"CPU-Simulator/simulator/pkg/logger"
 	"CPU-Simulator/simulator/pkg/memory"
+	"CPU-Simulator/simulator/pkg/settings"
+	"CPU-Simulator/simulator/pkg/translator"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -94,11 +97,11 @@ type CPU struct {
 	Registers        Registers
 	opcodes          map[int]func(*CPU) // Map opcode to a handler function
 	mmu              *memory.MMU
-	IsPaused         bool           // Flag to check if the CPU is paused
-	pauseChan        chan bool      // Channel to signal when to pause
-	resumeChan       chan bool      // Channel to signal when to resume
-	EventHandler     func(cpu *CPU) // Event handler to notify the OS about the cycle
-	InstructionCount int            // Count of instructions executed for this process instance
+	IsPaused         bool                          // Flag to check if the CPU is paused
+	EventHandler     func(cpu *CPU)                // Event handler to notify the OS about the cycle
+	InstructionCount int                           // Count of instructions executed for this process instance
+	PageFaultHandler func(*CPU, uint32, int) error // Handler to let os decide when the pte is invalid.
+	PauseWaitGroup   *sync.WaitGroup               // To let the cpu wait for the OnCycle function to finish.
 }
 
 // Register a new opcode
@@ -109,10 +112,15 @@ func (cpu *CPU) registerOpcode(opcode int, handler func(*CPU)) {
 func (cpu *CPU) fetch() {
 	logger.Log.Println("INFO: CPU fetch() instruction")
 	virtualAddr := uint32(cpu.Registers.PC)
-	physicalAddr, err := cpu.mmu.TranslateAddress(virtualAddr)
+	physicalAddr, errStruct := cpu.mmu.TranslateAddress(virtualAddr)
 	logger.Log.Printf("INFO: CPU.Fetch() - PhysicalAddr: %d", physicalAddr)
 	if physicalAddr == -1 {
-		fmt.Println(err)
+		fmt.Println(errStruct.Text)
+	}
+	if errStruct != nil {
+		cpu.Pause()
+		go cpu.PageFaultHandler(cpu, virtualAddr, errStruct.VPN)
+		return
 	}
 	cpu.Registers.MAR = physicalAddr
 	bindings.MarBinding.Set(cpu.Registers.MAR)
@@ -129,9 +137,14 @@ func (cpu *CPU) fetch() {
 	opcode := instructionBits & 0x7FFFFFFF           // Extract the last 15 bits
 
 	virtualAddr2 := uint32(cpu.Registers.PC + 1)
-	physicalAddr2, err := cpu.mmu.TranslateAddress(virtualAddr2)
+	physicalAddr2, errStruct := cpu.mmu.TranslateAddress(virtualAddr2)
 	if physicalAddr == -1 {
 		fmt.Println(err)
+	}
+	if errStruct != nil {
+		cpu.Pause()
+		go cpu.PageFaultHandler(cpu, virtualAddr, errStruct.VPN)
+		return
 	}
 	cpu.Registers.MAR = physicalAddr2
 	bindings.MarBinding.Set(cpu.Registers.MAR)
@@ -161,10 +174,11 @@ func (cpu *CPU) fetch() {
 		bindings.InstructionOperandBinding.Set(cpu.Registers.IR.Operand)
 	}
 	time.Sleep(100 * time.Millisecond)
-
-	cpu.Registers.PC += 2
+	instructionAddress := translator.FindNextInstructionAddress(settings.MemType, cpu.Registers.PC+2)
+	cpu.Registers.PC = instructionAddress
 	bindings.PcBinding.Set(cpu.Registers.PC) // Update binding
 	time.Sleep(100 * time.Millisecond)
+	return
 }
 
 func (cpu *CPU) decode() {
@@ -213,6 +227,7 @@ func (cpu *CPU) execute() {
 	for i := range cpu.mmu.PageTable.Entries {
 		logger.Log.Printf("INFO: CPU.execute() - PageTable Entry nr: %d -> %d", i, cpu.mmu.PageTable.Entries[i].FrameNumber)
 	}
+	return
 }
 
 func GetOpcodeName(opcode int) string {
@@ -229,6 +244,7 @@ func add(cpu *CPU) {
 	cpu.Registers.AC += cpu.Registers.MDR.Data
 	bindings.AcBinding.Set(cpu.Registers.AC)
 	fmt.Printf("Prev ACC: %d + Data: %d = New ACC: %d \n", oldAcc, cpu.Registers.MDR.Data, cpu.Registers.AC)
+	return
 }
 
 func sub(cpu *CPU) {
@@ -237,12 +253,13 @@ func sub(cpu *CPU) {
 	cpu.Registers.AC -= cpu.Registers.MDR.Data
 	bindings.AcBinding.Set(cpu.Registers.AC)
 	fmt.Printf("Prev ACC: %d - Data: %d = New ACC: %d \n", oldAcc, cpu.Registers.MDR.Data, cpu.Registers.AC)
-
+	return
 }
 
 func print(cpu *CPU) {
 	var name string = GetOpcodeName(cpu.Registers.IR.Opcode)
 	fmt.Printf("%s: %d\n", name, cpu.Registers.AC)
+	return
 }
 
 func store(cpu *CPU) {
@@ -250,79 +267,111 @@ func store(cpu *CPU) {
 	value := cpu.Registers.AC
 	destination := cpu.Registers.MDR.Data
 	logger.Log.Printf("DEBUG: store() address %d", destination)
-	physAddr, err := cpu.mmu.TranslateAddress(uint32(destination))
-	if err != nil {
-		logger.Log.Printf("ERROR: Store() %s", err)
+	physAddr, errStruct := cpu.mmu.TranslateAddress(uint32(destination))
+	if errStruct != nil {
+		logger.Log.Printf("ERROR: push() %s", errStruct.Text)
+		cpu.Registers.PC -= 2
+		cpu.Pause()
+		go cpu.PageFaultHandler(cpu, uint32(destination), errStruct.VPN)
 		return
 	}
 	cpu.mmu.Write(uint32(physAddr), uint32(value))
 	logger.Log.Println(destination)
 	logger.Log.Println(value)
+	return
 }
 
 func halt(cpu *CPU) {
 	logger.Log.Println("INFO: CPU halt()")
+	return
 }
 
 func jump(cpu *CPU) {
 	logger.Log.Println("INFO: CPU jump()")
 	cpu.Registers.PC = cpu.Registers.MDR.Data
 	bindings.PcBinding.Set(cpu.Registers.PC)
+	return
 }
 
 func clear(cpu *CPU) {
 	logger.Log.Println("INFO: CPU clear()")
 	cpu.Registers.AC = 0
 	bindings.AcBinding.Set(cpu.Registers.AC)
+	return
 }
 
 func push(cpu *CPU) {
 	logger.Log.Println("INFO: CPU push()")
+	destination := cpu.Registers.SP - 1
+	logger.Log.Printf("INFO: CPU push() - destination: %d", destination)
+	vpn, offset := translator.TranslateAddressToVPNandOffset(cpu.Registers.SP - 1)
+	logger.Log.Printf("INFO: push to VPN: %d, Offset: %d", vpn, offset)
+	stackPointer := translator.TranslateVPNandOffsetToAddress(vpn-1, settings.PageSize-1)
+	logger.Log.Printf("INFO: CPU push() - stackPointer: %d", stackPointer)
+	if offset >= settings.PageSize {
+		destination = int(translator.TranslateVPNandOffsetToAddress(vpn, settings.PageSize-1))
+		logger.Log.Println("INFO: CPU push() - stackPointer: %d", stackPointer)
+	}
+	physAddr, errStruct := cpu.mmu.TranslateAddress(uint32(destination))
+	logger.Log.Println("INFO: CPU push() - physAddr: %d", physAddr)
+	if errStruct != nil {
+		logger.Log.Printf("ERROR: push() %s", errStruct.Text)
+		cpu.Registers.PC -= 2
+		cpu.Pause()
+		go cpu.PageFaultHandler(cpu, uint32(destination), errStruct.VPN)
+		return
+	}
 
-	cpu.Registers.SP -= 1
+	cpu.Registers.SP = destination
 	bindings.SpBinding.Set(cpu.Registers.SP)
 
 	value := cpu.Registers.MDR.Data
-	destination := cpu.Registers.SP
-	physAddr, err := cpu.mmu.TranslateAddress(uint32(destination))
-	if err != nil {
-		logger.Log.Printf("ERROR: push() %s", err)
-		return
-	}
 	cpu.mmu.Write(uint32(physAddr), uint32(value))
+
 	logger.Log.Println(physAddr)
 	logger.Log.Println(value)
-
+	return
 }
 
 func pop(cpu *CPU) {
 	logger.Log.Println("INFO: CPU pop()")
-
 	destination := cpu.Registers.SP
-	physAddr, err := cpu.mmu.TranslateAddress(uint32(destination))
-	if err != nil {
-		logger.Log.Printf("ERROR: pop() %s", err)
+	physAddr, errStruct := cpu.mmu.TranslateAddress(uint32(destination))
+	if errStruct != nil {
+		logger.Log.Printf("ERROR: pop() %s", errStruct.Text)
+		cpu.Registers.PC -= 2
+		cpu.Pause()
+		go cpu.PageFaultHandler(cpu, uint32(destination), errStruct.VPN)
 		return
 	}
 	value, err := cpu.mmu.Read(uint32(physAddr))
 	if err != nil {
 		logger.Log.Printf("ERROR: pop() %s", err)
-		return
 	}
 	logger.Log.Println(value)
 	cpu.Registers.AC = value
 	bindings.AcBinding.Set(cpu.Registers.AC)
 
-	cpu.Registers.SP += 1
+	newSP := cpu.Registers.SP + 1
+	logger.Log.Printf("INFO: CPU push() - newSP: %d", newSP)
+	vpn, offset := translator.TranslateAddressToVPNandOffset(newSP)
+
+	if offset >= settings.PageSize {
+		newSP = int(translator.TranslateVPNandOffsetToAddress(vpn+1, 0))
+	}
+
+	cpu.Registers.SP = newSP
 	bindings.SpBinding.Set(cpu.Registers.SP)
+	return
 }
 
 // Initialize the CPU with default values
 func NewCPU(mmu *memory.MMU) *CPU {
 	logger.Log.Println("INFO: CPU New()")
 	cpu := &CPU{
-		opcodes: make(map[int]func(*CPU)),
-		mmu:     mmu,
+		opcodes:        make(map[int]func(*CPU)),
+		mmu:            mmu,
+		PauseWaitGroup: new(sync.WaitGroup),
 	}
 
 	// Adds default instructions to opcodes
@@ -341,8 +390,6 @@ func NewCPU(mmu *memory.MMU) *CPU {
 
 func (cpu *CPU) Run() {
 	cpu.IsPaused = false
-	cpu.pauseChan = make(chan bool)  // To pause the CPU
-	cpu.resumeChan = make(chan bool) // To resume the CPU
 	logger.Log.Println("INFO: CPU Run()")
 
 	for {
@@ -351,41 +398,37 @@ func (cpu *CPU) Run() {
 			time.Sleep(1000 * time.Millisecond)
 			continue
 		}
-
-		// Handle pause/resume logic
-		select {
-		case <-cpu.pauseChan:
-			cpu.IsPaused = true
-			logger.Log.Println("INFO: CPU paused")
-			// Waits until resume signal is received
-			<-cpu.resumeChan
-			cpu.IsPaused = false
-			logger.Log.Println("INFO: CPU resumed")
-		default:
-			// Proceed with CPU operations
-			if !cpu.IsPaused {
-				cpu.fetch()
-				time.Sleep(500 * time.Millisecond)
-				cpu.decode()
-				time.Sleep(500 * time.Millisecond)
-				cpu.execute()
-				time.Sleep(500 * time.Millisecond)
-				cpu.InstructionCount += 1
-				bindings.InstructionCount.Set(cpu.InstructionCount)
-				if cpu.EventHandler != nil {
-					logger.Log.Println("INFO: CPU EventHandler()")
-					go cpu.EventHandler(cpu) // Notify the OS about the cycle
-					time.Sleep(250 * time.Millisecond)
-				}
-			}
+		cpu.PauseWaitGroup.Wait() // If paused it wait, else it runs.
+		cpu.fetch()
+		if cpu.IsPaused {
+			continue
+		}
+		time.Sleep(settings.CpuFetchDecodeExecuteDelay * time.Millisecond)
+		cpu.decode()
+		time.Sleep(settings.CpuFetchDecodeExecuteDelay * time.Millisecond)
+		cpu.execute()
+		if cpu.IsPaused {
+			continue
+		}
+		time.Sleep(settings.CpuFetchDecodeExecuteDelay * time.Millisecond)
+		cpu.InstructionCount += 1
+		bindings.InstructionCount.Set(cpu.InstructionCount)
+		if cpu.EventHandler != nil {
+			logger.Log.Println("INFO: CPU EventHandler()")
+			cpu.Pause()
+			go cpu.EventHandler(cpu) // Notify the OS about the cycle
 		}
 	}
 }
 
 func (cpu *CPU) Pause() {
-	cpu.pauseChan <- true
+	logger.Log.Println("Pausing +1")
+	cpu.IsPaused = true
+	cpu.PauseWaitGroup.Add(1)
 }
 
 func (cpu *CPU) Resume() {
-	cpu.resumeChan <- true
+	logger.Log.Println("Resuming +1")
+	cpu.IsPaused = false
+	cpu.PauseWaitGroup.Done()
 }

@@ -20,7 +20,7 @@ func (freeList *FreeList) AllocateFrame(framesNeeded int) ([]int, error) {
 	logger.Log.Println("INFO: AllocateFrame() 1")
 	gotten := 0
 	for i := range freeList.FreeList {
-		if freeList.FreeList[i] == true {
+		if freeList.FreeList[i] {
 			list = append(list, i)
 			gotten += 1
 			freeList.FreeList[i] = false
@@ -30,8 +30,10 @@ func (freeList *FreeList) AllocateFrame(framesNeeded int) ([]int, error) {
 		}
 
 	}
-	logger.Log.Println("INFO: AllocateFrame() 2")
-	logger.Log.Printf("INFO: AllocateFrame() %d ", gotten)
+	logger.Log.Printf("INFO: AllocateFrame(), Frames given: %d ", gotten)
+	for _, value := range list {
+		logger.Log.Printf("INFO: AllocateFrame(), Frame nr: %d ", value)
+	}
 	freeList.NumberOfFreeFrames -= gotten
 	return list, nil
 }

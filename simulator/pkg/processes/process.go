@@ -53,6 +53,15 @@ type ProcessState struct {
 	Data          int  // If holding a data value
 }
 
+type SegmentLimits struct {
+	CodeStart  uint32 // Start of the code segment
+	CodeEnd    uint32 // End of the code segment
+	HeapStart  uint32 // Start of the heap segment
+	HeapEnd    uint32 // End of the heap segment
+	StackStart uint32 // Start of the stack segment
+	StackEnd   uint32 // End of the stack segment
+}
+
 type PCB struct {
 	Pid                 int               // id of the process
 	Name                string            // Name of process, only for showing in list.
@@ -64,4 +73,5 @@ type PCB struct {
 	PageAmount          int               // Number of pages available to the process
 	Metrics             metrics.Metrics   // Metrics for the process
 	UpdateChan          chan bool         // Channel to notify the process has changed
+	Limits              SegmentLimits     // Keeps track of the code, heap, stack limits.
 }

@@ -6,6 +6,10 @@ import (
 	"fmt"
 )
 
+type ErrorStruct struct {
+	Text string
+	VPN  int
+}
 type MMU struct {
 	TLB                  int        // doesnt store int, only temp. cache
 	PageTable            *PageTable // Pages for the cpu
@@ -13,18 +17,25 @@ type MMU struct {
 	PageTableForCreation *PageTable // Used accessing memory not by cpu.
 }
 
-func (mmu *MMU) TranslateAddress(virtualAddr uint32) (int, error) {
-	for key, value := range mmu.PageTable.Entries {
-		logger.Log.Printf("MMU - PageTableEntrie %d -> %d", key, value.FrameNumber)
-	}
-	vpn := uint16(virtualAddr >> 16)
+func (mmu *MMU) TranslateAddress(virtualAddr uint32) (int, *ErrorStruct) {
+
+	vpn := int(virtualAddr >> 16)
 	offset := uint16(virtualAddr & 0xFFFF)
 	logger.Log.Printf("VPN: %d\n", vpn)
 	logger.Log.Printf("Offset: %d\n", offset)
-
+	if !mmu.PageTable.Entries[vpn].Valid {
+		err := &ErrorStruct{
+			Text: "ERROR: Page Fault",
+			VPN:  vpn,
+		}
+		return -1, err
+	}
 	if offset < 0 || offset >= settings.PageSize {
 		logger.Log.Printf("INFO: TranslateAddress() - Offset: %d\n", offset)
-		err := fmt.Errorf("ERROR: mmu_TranslateAddress() | offset: address out of bounds")
+		err := &ErrorStruct{
+			Text: "ERROR: mmu_TranslateAddress() | offset: address out of bounds",
+			VPN:  vpn,
+		}
 		logger.Log.Println(err)
 		return -1, err
 	}
@@ -32,7 +43,10 @@ func (mmu *MMU) TranslateAddress(virtualAddr uint32) (int, error) {
 
 		logger.Log.Printf("INFO: TranslateAddress() - VPN: %d\n", int(vpn))
 		logger.Log.Printf("INFO: TranslateAddress() - PageTableSize: %d\n", len(mmu.PageTable.Entries))
-		err := fmt.Errorf("ERROR: mmu_TranslateAddress() | pfn: address out of bounds")
+		err := &ErrorStruct{
+			Text: "ERROR: mmu_TranslateAddress() | pfn: address out of bounds",
+			VPN:  vpn,
+		}
 		logger.Log.Println(err)
 		return -1, err
 	}
@@ -72,6 +86,7 @@ func (mmu *MMU) Write(physicalAddr uint32, value uint32) error {
 
 	if offset < 0 || offset >= settings.PageSize {
 		err := fmt.Errorf("ERROR: mmu_Write() | offset: address out of bounds")
+		logger.Log.Println("Offset: %d", offset)
 		logger.Log.Println(err)
 		return err
 	}
@@ -91,11 +106,11 @@ func NewMMU(mem *Memory) *MMU {
 	mmu := &MMU{
 		TLB: settings.NumFrames,
 		PageTable: &PageTable{
-			Entries: make(map[uint16]*PTE),
+			Entries: make(map[int]*PTE),
 		},
 		memory: mem,
 		PageTableForCreation: &PageTable{
-			Entries: make(map[uint16]*PTE),
+			Entries: make(map[int]*PTE),
 		},
 	}
 
