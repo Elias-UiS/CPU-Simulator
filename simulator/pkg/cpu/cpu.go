@@ -91,6 +91,8 @@ type Registers struct {
 
 	SP int // Stack Pointer
 	//SR int // Status Register/Flags
+	FAR int // Fault Address Register	| Holds address that caused the page fault.
+	FVR int // Fault VPN Register	| Holds vpn that caused the page fault.
 }
 
 type CPU struct {
@@ -101,7 +103,9 @@ type CPU struct {
 	EventHandler     func(cpu *CPU)                // Event handler to notify the OS about the cycle
 	InstructionCount int                           // Count of instructions executed for this process instance
 	PageFaultHandler func(*CPU, uint32, int) error // Handler to let os decide when the pte is invalid.
+	InterruptHandler func(*CPU) error              // Interrupt handler
 	PauseWaitGroup   *sync.WaitGroup               // To let the cpu wait for the OnCycle function to finish.
+	InterruptCode    int                           // Interrupt code to be used by the OS
 }
 
 // Register a new opcode
@@ -119,7 +123,11 @@ func (cpu *CPU) fetch() {
 	}
 	if errStruct != nil {
 		cpu.Pause()
-		go cpu.PageFaultHandler(cpu, virtualAddr, errStruct.VPN)
+		cpu.Registers.FAR = int(virtualAddr)
+		cpu.Registers.FVR = errStruct.VPN
+		cpu.InterruptCode = 1
+		//go cpu.PageFaultHandler(cpu, virtualAddr, errStruct.VPN)
+		go cpu.InterruptHandler(cpu)
 		return
 	}
 	cpu.Registers.MAR = physicalAddr
@@ -143,6 +151,9 @@ func (cpu *CPU) fetch() {
 	}
 	if errStruct != nil {
 		cpu.Pause()
+		cpu.Registers.FAR = int(virtualAddr)
+		cpu.Registers.FVR = errStruct.VPN
+		cpu.InterruptCode = 1
 		go cpu.PageFaultHandler(cpu, virtualAddr, errStruct.VPN)
 		return
 	}
@@ -272,6 +283,9 @@ func store(cpu *CPU) {
 		logger.Log.Printf("ERROR: push() %s", errStruct.Text)
 		cpu.Registers.PC -= 2
 		cpu.Pause()
+		cpu.Registers.FAR = destination
+		cpu.Registers.FVR = errStruct.VPN
+		cpu.InterruptCode = 1
 		go cpu.PageFaultHandler(cpu, uint32(destination), errStruct.VPN)
 		return
 	}
@@ -318,7 +332,11 @@ func push(cpu *CPU) {
 		logger.Log.Printf("ERROR: push() %s", errStruct.Text)
 		cpu.Registers.PC -= 2
 		cpu.Pause()
-		go cpu.PageFaultHandler(cpu, uint32(destination), errStruct.VPN)
+		cpu.Registers.FAR = destination
+		cpu.Registers.FVR = errStruct.VPN
+		cpu.InterruptCode = 1
+		//go cpu.PageFaultHandler(cpu, uint32(destination), errStruct.VPN)
+		go cpu.InterruptHandler(cpu)
 		return
 	}
 
@@ -341,7 +359,11 @@ func pop(cpu *CPU) {
 		logger.Log.Printf("ERROR: pop() %s", errStruct.Text)
 		cpu.Registers.PC -= 2
 		cpu.Pause()
-		go cpu.PageFaultHandler(cpu, uint32(destination), errStruct.VPN)
+		cpu.Registers.FAR = destination
+		cpu.Registers.FVR = errStruct.VPN
+		cpu.InterruptCode = 1
+		//go cpu.PageFaultHandler(cpu, uint32(destination), errStruct.VPN)
+		go cpu.InterruptHandler(cpu)
 		return
 	}
 	value, err := cpu.mmu.Read(uint32(physAddr))

@@ -72,6 +72,7 @@ func (os *OS) StartSimulation() {
 	os.osIsRunning = true
 
 	os.CPU[0].PageFaultHandler = os.PageFaultHandler
+	os.CPU[0].InterruptHandler = os.InterruptHandler
 
 	pcb := os.ProcessController.MakeTestProcessBasic()
 	pcb2 := os.ProcessController.MakeTestProcessBasic2()
@@ -413,10 +414,36 @@ func (os *OS) PageFaultHandler(cpu *cpu.CPU, address uint32, vpn int) error {
 		}
 		logger.Log.Println("ERROR: PageFaultHandler() 6")
 		cpu.Resume()
-
+		return nil
 	}
 	logger.Log.Println("ERROR: PageFaultHandler() 7")
 	pcb.State = processes.Terminated
 	os.ContextSwitch(cpu)
 	return nil
+}
+
+func (os *OS) InterruptHandler(cpu *cpu.CPU) error {
+	logger.Log.Println("INFO: InterruptHandler()")
+	code := cpu.InterruptCode
+	switch code {
+	case 1:
+		// Handle pageFault interrupt
+		address := cpu.Registers.FAR
+		vpn := cpu.Registers.FVR
+		err := os.PageFaultHandler(cpu, uint32(address), vpn)
+		if err != nil {
+			logger.Log.Println(err)
+		}
+
+	case 2:
+
+	default:
+		logger.Log.Println("ERROR: InterruptHandler() - Unknown interrupt code")
+		process := os.Scheduler.GetRunningProcess()
+		process.State = processes.Terminated
+		os.ContextSwitch(cpu)
+	}
+
+	return nil
+
 }

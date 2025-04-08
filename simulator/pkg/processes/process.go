@@ -66,7 +66,7 @@ type PCB struct {
 	Pid                 int               // id of the process
 	Name                string            // Name of process, only for showing in list.
 	PageTable           *memory.PageTable // index is the same as the virtual page number
-	State               State             // New, Ready, Running, Blocked
+	State               State             // New, Ready, Running, Blocked, Terminated
 	ProcessState        ProcessState      // State of the registers
 	NextFreeCodeAddress uint32            // next address for the storing instructions
 	Priority            int               // Priority of the process
