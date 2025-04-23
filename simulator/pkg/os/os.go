@@ -7,6 +7,7 @@ import (
 	"CPU-Simulator/simulator/pkg/memory"
 	"CPU-Simulator/simulator/pkg/processes"
 	"CPU-Simulator/simulator/pkg/scheduler"
+	"CPU-Simulator/simulator/pkg/scheduler/schedulerFiles"
 	"CPU-Simulator/simulator/pkg/settings"
 	"fmt"
 	"sync"
@@ -27,6 +28,7 @@ type OS struct {
 	StepMode          bool
 	MidContextSwitch  bool
 	OSMutex           sync.RWMutex
+	MemoryController  *memory.MemoryController
 }
 
 func NewOS() *OS {
@@ -36,18 +38,21 @@ func NewOS() *OS {
 	// Initialize MMU
 	mmu := memory.NewMMU(mem)
 
+	// Initialize MemoryController
+	memoryController := memory.NewMemoryController(mem)
+
 	// Initialize CPU
-	cpuInstance := cpu.NewCPU(mmu)
+	cpuInstance := cpu.NewCPU(mmu, memoryController)
 
 	// Initialize free list
 	freeList := memory.NewFreeList()
 
 	processTableStruct := processes.CreateProcessTable()
 
-	scheduler := scheduler.NewScheduler()
+	scheduler := schedulerFiles.NewScheduler()
 
 	// Initialize processController
-	controller := createController(mmu, freeList, processTableStruct)
+	controller := createController(mmu, freeList, processTableStruct, memoryController)
 
 	return &OS{
 		CPU:               []*cpu.CPU{cpuInstance},
@@ -61,6 +66,7 @@ func NewOS() *OS {
 		Scheduler:         scheduler,
 		Test:              10,
 		StepMode:          false,
+		MemoryController:  memoryController,
 	}
 }
 
@@ -88,6 +94,7 @@ func (os *OS) StartSimulation() {
 	os.AddProcessToSchedulerQueue(pcb3)
 	os.AddProcessToSchedulerQueue(pcb4)
 
+	logger.Log.Println(os.Scheduler)
 	nextPcb := os.Scheduler.GetNextProcess()
 	os.ProcessController.SetPageTabletoMMU(nextPcb)
 	os.SetNewProcessState(nextPcb, os.CPU[0])
@@ -127,7 +134,6 @@ func (os *OS) ResumeSimulation() {
 
 		os.Scheduler.GetRunningProcess().Metrics.CpuStartTime = time.Now()
 	}
-	os.StepMode = false
 	os.cpuIsRunning = true
 	os.UpdateMetricsResume()
 }
@@ -136,7 +142,7 @@ func (os *OS) ResumeSimulation() {
 func (os *OS) StopSimulation() {
 
 	fmt.Println("Stopping simulation...")
-	//os.CPU.Stop()
+	//os.CPU.Stop()5
 }
 
 func (os *OS) Reset() {
@@ -144,7 +150,7 @@ func (os *OS) Reset() {
 	// Reset memory, MMU, CPU, and free list
 	os.Memory = memory.NewMemory()
 	os.MMU = memory.NewMMU(os.Memory)
-	os.CPU = []*cpu.CPU{cpu.NewCPU(os.MMU)}
+	os.CPU = []*cpu.CPU{cpu.NewCPU(os.MMU, os.MemoryController)}
 	os.FreeList = memory.NewFreeList()
 }
 
@@ -173,7 +179,9 @@ func (os *OS) ContextSwitch(cpu *cpu.CPU) {
 		currentProcess.Metrics.TurnaroundTime = time.Now().Sub(currentProcess.Metrics.ArrivalTime)
 	}
 	currentProcess.Metrics.WaitingStartTime = time.Now()
-
+	if currentProcess.State != processes.Terminated {
+		currentProcess.State = processes.Ready
+	}
 	for i := range os.Scheduler.GetReadyQueue() {
 		logger.Log.Println("Ready Queue list 2: ", os.Scheduler.GetReadyQueue()[i].Pid)
 	}
@@ -182,10 +190,6 @@ func (os *OS) ContextSwitch(cpu *cpu.CPU) {
 		logger.Log.Println("Ready Queue list 3: ", os.Scheduler.GetReadyQueue()[i].Pid)
 	}
 	logger.Log.Printf("Info: IsTerminated Check: %d", currentProcess.State)
-	if currentProcess.State != processes.Terminated {
-		currentProcess.State = processes.Ready
-		os.AddProcessToSchedulerQueue(currentProcess)
-	}
 
 	if nextProcess == nil {
 		logger.Log.Println("No processes in the ready queue.")
@@ -297,11 +301,6 @@ func (os *OS) AddProcessToSchedulerQueue(pcb *processes.PCB) {
 	pcb.Metrics.ArrivalTime = time.Now()
 }
 
-func (os *OS) GetScheduler() scheduler.SchedulerInterface {
-	scheduler := scheduler.NewScheduler()
-	return scheduler
-}
-
 func (os *OS) TestNumer() {
 	for {
 		os.Test += 1
@@ -324,7 +323,7 @@ func (os *OS) OnCPUCycle(cpu *cpu.CPU) {
 		cpu.Pause()
 		os.ContextSwitch(cpu)
 	}
-	instruction, err := os.MMU.Read(uint32(phys))
+	instruction, err := os.MemoryController.Read(uint32(phys))
 	if err != nil {
 		logger.Log.Println("Error: OS | OnCPUCycle | Read\n", err)
 		return
@@ -337,6 +336,8 @@ func (os *OS) OnCPUCycle(cpu *cpu.CPU) {
 		os.ContextSwitch(cpu)
 	}
 	if cpu.InstructionCount >= settings.InstructionLimitPerRun {
+		logger.Log.Println(cpu.InstructionCount)
+		logger.Log.Println(settings.InstructionLimitPerRun)
 		logger.Log.Println("OS: Exceeded instruction count per process instance.")
 		logger.Log.Println("OS: Performing context switch.")
 		cpu.Pause()

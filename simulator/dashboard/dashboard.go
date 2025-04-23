@@ -20,6 +20,7 @@ type DashboardStruct struct {
 }
 
 func (dash *DashboardStruct) startClock(clock *widget.Label) {
+	dash.clock = 0
 	for {
 		time.Sleep(1000 * time.Millisecond)
 		if !dash.IsRunnning {
@@ -41,49 +42,14 @@ func Dashboard(dash *DashboardStruct) {
 	myWindow := myApp.NewWindow("TabContainer Widget")
 	myWindow.Resize(fyne.NewSize(800, 600))
 
-	// /////////////////////////////////
-	// // Dropdown to select memory model
-	// memoryType := widget.NewSelect([]string{"Paging", "Segmentation"}, func(selected string) {
-	// 	fmt.Println("Selected memory type:", selected)
-	// })
-	// memoryType.SetSelected("Paging") // Default selection
-
-	// // Button to create memory based on selection
-	// var physicalMemory *memory.Memory
-	// setupMemoryButton := widget.NewButton("Setup Memory", func() {
-	// 	if memoryType.Selected == "Paging" {
-	// 		physicalMemory = memory.NewMemory()
-	// 	} else {
-	// 		physicalMemory = memory.NewMemory()
-	// 	}
-	// 	fmt.Println("Memory initialized:", memoryType.Selected)
-	// })
-	// fmt.Printf("TESTING HERE4")
-	// var cpuInstance *cpu.CPU
-	// setupCPUButton := widget.NewButton("Setup CPU", func() {
-	// 	if physicalMemory == nil {
-	// 		fmt.Println("Error: Setup memory first!")
-	// 		return
-	// 	}
-	// 	cpuInstance = cpu.NewCPU()
-	// 	fmt.Println("CPU initialized with memory:", memoryType.Selected)
-	// })
-
-	// configContainer := container.NewVBox(
-	// 	widget.NewLabel("Select Memory Type"),
-	// 	memoryType,
-	// 	setupMemoryButton,
-	// 	setupCPUButton,
-	// )
-
-	//////////////////////////////////
-
 	os := os.NewOS()
 	go os.TestNumer()
 	//var cpuInstance = os.CPU[0]
 
 	clock := widget.NewLabel("00:00:00")
 	status := widget.NewLabel("Not Running")
+
+	var scheduler *container.TabItem
 
 	startSimulationButton := widget.NewButton("Start", func() {
 		if dash.IsRunnning {
@@ -93,19 +59,21 @@ func Dashboard(dash *DashboardStruct) {
 		os.StartSimulation()
 		status.SetText("Running")
 		dash.IsRunnning = true
+		scheduler.Content = CreateSchedulerTab(os.Scheduler)
+
 		go dash.SystemState.UpdateState(os)
 	})
 
 	stopSimulationButton := widget.NewButton("Stop", func() {
-
-		//stopClockChan <- true
-		status.SetText("Stopped")
+		status.SetText("Not Running")
+		os.StopSimulation()
 	})
 
 	resumetSimulationButton := widget.NewButton("Resume", func() {
 		if dash.IsRunnning {
 			return
 		}
+		os.StepMode = false
 		go os.ResumeSimulation()
 		status.SetText("Running")
 		dash.IsRunnning = true
@@ -148,15 +116,18 @@ func Dashboard(dash *DashboardStruct) {
 		clock,
 	)
 
+	main := container.NewTabItem("Main (Settings)", setupMainTab(os))
 	cpu := container.NewTabItem("CPU", setupCpuTab(os))
 	memory := container.NewTabItem("MEMORY", setupMemoryTab(os.Memory))
 	processes := container.NewTabItem("Processes", CreatePCBUI(os, os.ProcessTable))
-	scheduler := container.NewTabItem("Scheduler", CreateSchedulerTab(os.Scheduler))
+	placeholderContent := widget.NewLabel("Start simulation first")
+	scheduler = container.NewTabItem("Scheduler", placeholderContent)
 	calculator := container.NewTabItem("Calculator", setupCalculatorTab())
 	processCreation := container.NewTabItem("Process Creator", ProcessCreationTab(os))
 	systemState := container.NewTabItem("System State", setupSystemStateTab(dash.SystemState.PubSub))
 
 	tabs := container.NewAppTabs(
+		main,
 		cpu,
 		memory,
 		processes, // Todo: Implement processes tab
@@ -181,22 +152,3 @@ func Dashboard(dash *DashboardStruct) {
 	myWindow.ShowAndRun()
 
 }
-
-// // Registers
-// var registerHeader *widget.Label = widget.NewLabel("Registers\n")
-// registerHeader.TextStyle.Monospace = true
-// registerHeader.TextStyle.Bold = true
-
-// var registerDisplay string = cpu.GetRegisters()
-// var registerDisplayWidget *widget.Label = widget.NewLabel(registerDisplay)
-// registerDisplayWidget.TextStyle.Monospace = true
-// registerDisplayWidget.TextStyle.Bold = true
-// var registerContainer = container.NewStack(
-// 	container.NewVBox(
-// 		registerHeader,
-// 		registerDisplayWidget,
-// 	))
-
-// accumulatorValue := binding.BindInt(&cpu.Registers.AC)
-// s, _ := boundString.Get()
-// log.Printf("Bound = '%s'", s)

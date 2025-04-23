@@ -3,7 +3,6 @@ package memory
 import (
 	"CPU-Simulator/simulator/pkg/logger"
 	"CPU-Simulator/simulator/pkg/settings"
-	"fmt"
 )
 
 type ErrorStruct struct {
@@ -11,10 +10,9 @@ type ErrorStruct struct {
 	VPN  int
 }
 type MMU struct {
-	TLB                  int        // doesnt store int, only temp. cache
-	PageTable            *PageTable // Pages for the cpu
-	memory               *Memory
-	PageTableForCreation *PageTable // Used accessing memory not by cpu.
+	TLB       int        // doesnt store int, only temp. cache
+	PageTable *PageTable // Pages for the cpu
+	memory    *Memory
 }
 
 func (mmu *MMU) TranslateAddress(virtualAddr uint32) (int, *ErrorStruct) {
@@ -58,49 +56,49 @@ func (mmu *MMU) TranslateAddress(virtualAddr uint32) (int, *ErrorStruct) {
 	return int(physicalAddr), nil
 }
 
-func (mmu *MMU) Read(physicalAddr uint32) (int, error) {
-	pfn := uint16(physicalAddr >> 16)
-	offset := uint16(physicalAddr & 0xFFFF)
+// func (mmu *MMU) Read(physicalAddr uint32) (int, error) {
+// 	pfn := uint16(physicalAddr >> 16)
+// 	offset := uint16(physicalAddr & 0xFFFF)
 
-	if offset < 0 || offset >= settings.PageSize {
-		err := fmt.Errorf("ERROR: mmu_Read() | offset: address out of bounds")
-		logger.Log.Println(err)
-		return -1, err
-	}
+// 	if offset < 0 || offset >= settings.PageSize {
+// 		err := fmt.Errorf("ERROR: mmu_Read() | offset: address out of bounds")
+// 		logger.Log.Println(err)
+// 		return -1, err
+// 	}
 
-	if int(pfn) >= settings.NumFrames {
-		err := fmt.Errorf("ERROR: mmu_Read() | pfn: address out of bounds")
-		logger.Log.Println(err)
-		return -1, err
-	}
+// 	if int(pfn) >= settings.NumFrames {
+// 		err := fmt.Errorf("ERROR: mmu_Read() | pfn: address out of bounds")
+// 		logger.Log.Println(err)
+// 		return -1, err
+// 	}
 
-	data := mmu.memory.Frames[pfn][offset]
+// 	data := mmu.memory.Frames[pfn][offset]
 
-	// Return the physical address (offset from base)
-	return int(data), nil
-}
+// 	// Return the physical address (offset from base)
+// 	return int(data), nil
+// }
 
-func (mmu *MMU) Write(physicalAddr uint32, value uint32) error {
-	pfn := uint16(physicalAddr >> 16)
-	offset := uint16(physicalAddr & 0xFFFF)
+// func (mmu *MMU) Write(physicalAddr uint32, value uint32) error {
+// 	pfn := uint16(physicalAddr >> 16)
+// 	offset := uint16(physicalAddr & 0xFFFF)
 
-	if offset < 0 || offset >= settings.PageSize {
-		err := fmt.Errorf("ERROR: mmu_Write() | offset: address out of bounds")
-		logger.Log.Println("Offset: %d", offset)
-		logger.Log.Println(err)
-		return err
-	}
-	if int(pfn) >= settings.NumFrames {
-		err := fmt.Errorf("ERROR: mmu_Write() | pfn: address out of bounds")
-		logger.Log.Println(err)
-		return err
-	}
+// 	if offset < 0 || offset >= settings.PageSize {
+// 		err := fmt.Errorf("ERROR: mmu_Write() | offset: address out of bounds")
+// 		logger.Log.Println("Offset: %d", offset)
+// 		logger.Log.Println(err)
+// 		return err
+// 	}
+// 	if int(pfn) >= settings.NumFrames {
+// 		err := fmt.Errorf("ERROR: mmu_Write() | pfn: address out of bounds")
+// 		logger.Log.Println(err)
+// 		return err
+// 	}
 
-	mmu.memory.Frames[pfn][offset] = value
+// 	mmu.memory.Frames[pfn][offset] = value
 
-	// Return the physical address (offset from base)
-	return nil
-}
+// 	// Return the physical address (offset from base)
+// 	return nil
+// }
 
 func NewMMU(mem *Memory) *MMU {
 	mmu := &MMU{
@@ -109,9 +107,6 @@ func NewMMU(mem *Memory) *MMU {
 			Entries: make(map[int]*PTE),
 		},
 		memory: mem,
-		PageTableForCreation: &PageTable{
-			Entries: make(map[int]*PTE),
-		},
 	}
 
 	return mmu

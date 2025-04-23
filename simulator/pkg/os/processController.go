@@ -9,16 +9,21 @@ import (
 	"CPU-Simulator/simulator/pkg/settings"
 	"CPU-Simulator/simulator/pkg/translator"
 	"fmt"
+	"log"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
 // Main struct
 type Controller struct {
-	nextFreeID      int
-	ProcessTable    *processes.ProcessTable
-	mmu             *memory.MMU
-	freelist        *memory.FreeList
-	InstructionList *[]cpu.Instruction
+	nextFreeID       int
+	ProcessTable     *processes.ProcessTable
+	mmu              *memory.MMU
+	freelist         *memory.FreeList
+	InstructionList  *[]cpu.Instruction
+	MemoryController *memory.MemoryController
 }
 
 func (controller *Controller) MakeProcess(instructionCount int) (*processes.PCB, error) {
@@ -151,7 +156,7 @@ func (controller *Controller) StoreInstruction(instruction uint64, id int) {
 
 	logger.Log.Printf("Info: opcodeType: %d", opcodeType)
 	logger.Log.Printf("Info: StoreInstruction(). Physical address: %d", physicalAddr)
-	controller.mmu.Write(uint32(physicalAddr), opcodeType)
+	controller.MemoryController.Write(uint32(physicalAddr), opcodeType)
 	if err != nil {
 		logger.Log.Println(err)
 	}
@@ -162,7 +167,7 @@ func (controller *Controller) StoreInstruction(instruction uint64, id int) {
 	if err != nil {
 		logger.Log.Println("Error: StoreInstruction failed, TranslateAddress()")
 	}
-	controller.mmu.Write(uint32(physicalAddr), operand)
+	controller.MemoryController.Write(uint32(physicalAddr), operand)
 	if err != nil {
 		logger.Log.Println(err)
 	}
@@ -172,14 +177,15 @@ func (controller *Controller) StoreInstruction(instruction uint64, id int) {
 	logger.Log.Print("Done with setting NextFreeCodeAddress")
 }
 
-func createController(mmu *memory.MMU, freelist *memory.FreeList, processTableStruct *processes.ProcessTable) *Controller {
+func createController(mmu *memory.MMU, freelist *memory.FreeList, processTableStruct *processes.ProcessTable, memoryController *memory.MemoryController) *Controller {
 	instructionList := &[]cpu.Instruction{}
 	controller := Controller{
-		nextFreeID:      0,
-		ProcessTable:    processTableStruct,
-		mmu:             mmu,
-		freelist:        freelist,
-		InstructionList: instructionList,
+		nextFreeID:       0,
+		ProcessTable:     processTableStruct,
+		mmu:              mmu,
+		freelist:         freelist,
+		InstructionList:  instructionList,
+		MemoryController: memoryController,
 	}
 	return &controller
 }
@@ -188,18 +194,6 @@ func (controller *Controller) SetPageTabletoMMU(pcb *processes.PCB) {
 	controller.mmu.SetPageTable(pcb.PageTable)
 	fmt.Printf("Switched to Process %d\n", pcb.Pid)
 }
-
-// TODO: Self explanatory
-// func (controller *Controller) MakeTestProcessFromFile() {
-// 	logger.Log.Println("INFO: MakeTestProcessFromFile()")
-// 	pcb, err := controller.MakeProcess()
-// 	if err != nil {
-// 		fmt.Println(err)
-// 		return
-// 	}
-// 	pcb.Name = "Manual"
-// 	fmt.Println(pcb)
-// }
 
 func (controller *Controller) MakeTestProcessBasic() *processes.PCB {
 	logger.Log.Println("INFO: MakeTestProcessBasic()")
@@ -297,12 +291,13 @@ func (controller *Controller) MakeTestProcessStackBasic() *processes.PCB {
 	fmt.Println(pcb)
 	return pcb
 }
+
 func (controller *Controller) AddInstructionToList(opType int, opCode int, operand int) {
 	instruction := cpu.Instruction{opType, opCode, operand}
 	*controller.InstructionList = append(*controller.InstructionList, instruction)
 }
 
-func (controller *Controller) CreateProcessFromInstructionList(name string) *processes.PCB {
+func (controller *Controller) CreateProcessFromInstructionList(name string, isFromFile bool) *processes.PCB {
 	instructionCount := len(*controller.InstructionList)
 	process, err := controller.MakeProcess(instructionCount)
 	if err != nil {
@@ -311,12 +306,16 @@ func (controller *Controller) CreateProcessFromInstructionList(name string) *pro
 	}
 
 	process.Name = name
-	//controller.mmu.PageTableForCreation = process.PageTable
+
 	for _, value := range *controller.InstructionList {
 		instructionInBytes := value.ToInt()
 		controller.StoreInstruction(instructionInBytes, process.Pid)
 	}
-	*controller.InstructionList = []cpu.Instruction{}
+	if !isFromFile {
+		controller.WriteInstructionListToFile(name)
+	}
+	*controller.InstructionList = []cpu.Instruction{} // Clear the instruction list after creating the process
+
 	return process
 }
 
@@ -324,4 +323,83 @@ func (controller *Controller) DeleteInstructionList() {
 
 	*controller.InstructionList = []cpu.Instruction{}
 	return
+}
+
+func (controller *Controller) WriteInstructionListToFile(name string) error {
+
+	timestamp := time.Now().Format("2006.01.02_1504")
+	filepath := fmt.Sprintf("simulator/pkg/processes/processFiles/%s_%s.json", name, timestamp)
+
+	file, err := os.Create(filepath)
+	if err != nil {
+		log.Printf("ERROR: Could not create file: %v", err)
+		return err
+	}
+	defer file.Close()
+
+	// Write header
+	_, err = fmt.Fprintln(file, "OpType\tOpCode\tOperand")
+	if err != nil {
+		return err
+	}
+
+	// Iterate over instructions and write them to the file
+	for _, instruction := range *controller.InstructionList {
+
+		_, err := fmt.Fprintf(file, "%d\t%d\t%d\n",
+			instruction.OpType,
+			instruction.Opcode,
+			instruction.Operand)
+		if err != nil {
+			logger.Log.Printf("ERROR: Could not write instruction to file: %v", err)
+			return err
+		}
+	}
+
+	logger.Log.Println("Instruction list written to file:", filepath)
+	return nil
+}
+
+func (controller *Controller) CreateProcessFromFile(filename string) *processes.PCB {
+	logger.Log.Println("INFO: CreateProcessFromFile()", filename)
+	filepath := fmt.Sprintf("simulator/pkg/processes/processFiles/%s", filename)
+	data, err := os.ReadFile(filepath)
+	if err != nil {
+		log.Printf("ERROR: Could not read file: %v", err)
+	}
+
+	// Split the file contents by newlines
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+
+	// Iterate through each line, skipping the header
+	for i, line := range lines {
+		if i == 0 {
+			continue // Skip header row
+		}
+
+		// Split line into parts by the tab character
+		parts := strings.Split(line, "\t")
+
+		opType, err := strconv.Atoi(parts[0])
+		if err != nil {
+			log.Printf("ERROR: Invalid OPType format in line: %s", line)
+			continue
+		}
+
+		opCode, err := strconv.Atoi(parts[1])
+		if err != nil {
+			log.Printf("ERROR: Invalid OPCode format in line: %s", line)
+			continue
+		}
+
+		operand, err := strconv.Atoi(parts[2])
+		if err != nil {
+			log.Printf("ERROR: Invalid Operand format in line: %s", line)
+			continue
+		}
+		controller.AddInstructionToList(opType, opCode, operand)
+	}
+	name := strings.Split(filename, "_")[0]
+	pcb := controller.CreateProcessFromInstructionList(name, true)
+	return pcb
 }

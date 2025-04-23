@@ -46,6 +46,11 @@ Dermed kan jeg lage en enklere "minne" bytte modul.
 Til i morgen:
 
 
-PageFaultHandler freezer
-fix
+Lage en annen scheduler.
+Mulig å bytte scheduler.
+Lage en skikkelig stop funksjon.
+
+Usikker helt hva den bør gjøre.
+Burde fjerne alle processer. Resette alt som jeg må.
+Lage en ny state fil? Den gjør vell det automatisk.
 

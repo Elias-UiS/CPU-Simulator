@@ -42,8 +42,8 @@ var OpcodeValues = map[string]int{
 	"ADD":   ADD,
 	"SUB":   SUB,
 	"STORE": STORE,
-	"PRINT": PRINT,
-	"HALT":  HALT,
+	"PRINT": PRINT, // Not done?
+	"HALT":  HALT,  // Not done
 	"JUMP":  JUMP,
 	"LOAD":  LOAD,
 	"CLEAR": CLEAR,
@@ -106,6 +106,7 @@ type CPU struct {
 	InterruptHandler func(*CPU) error              // Interrupt handler
 	PauseWaitGroup   *sync.WaitGroup               // To let the cpu wait for the OnCycle function to finish.
 	InterruptCode    int                           // Interrupt code to be used by the OS
+	MemoryController *memory.MemoryController      // Memory controller to access memory
 }
 
 // Register a new opcode
@@ -135,7 +136,7 @@ func (cpu *CPU) fetch() {
 
 	time.Sleep(100 * time.Millisecond)
 
-	instructionBits, err := cpu.mmu.Read(uint32(cpu.Registers.MAR))
+	instructionBits, err := cpu.MemoryController.Read(uint32(cpu.Registers.MAR))
 	if physicalAddr == -1 {
 		fmt.Println(err)
 	}
@@ -160,7 +161,7 @@ func (cpu *CPU) fetch() {
 	cpu.Registers.MAR = physicalAddr2
 	bindings.MarBinding.Set(cpu.Registers.MAR)
 	time.Sleep(100 * time.Millisecond)
-	addressBits, err := cpu.mmu.Read(uint32(cpu.Registers.MAR))
+	addressBits, err := cpu.MemoryController.Read(uint32(cpu.Registers.MAR))
 	if physicalAddr == -1 {
 		fmt.Println(err)
 	}
@@ -216,7 +217,7 @@ func (cpu *CPU) decode() {
 func (cpu *CPU) execute() {
 	logger.Log.Println("INFO: CPU execute() instruction")
 	if cpu.Registers.MDR.IsInstruction {
-		value, err := cpu.mmu.Read(uint32(cpu.Registers.MAR))
+		value, err := cpu.MemoryController.Read(uint32(cpu.Registers.MAR))
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -289,7 +290,7 @@ func store(cpu *CPU) {
 		go cpu.PageFaultHandler(cpu, uint32(destination), errStruct.VPN)
 		return
 	}
-	cpu.mmu.Write(uint32(physAddr), uint32(value))
+	cpu.MemoryController.Write(uint32(physAddr), uint32(value))
 	logger.Log.Println(destination)
 	logger.Log.Println(value)
 	return
@@ -344,7 +345,7 @@ func push(cpu *CPU) {
 	bindings.SpBinding.Set(cpu.Registers.SP)
 
 	value := cpu.Registers.MDR.Data
-	cpu.mmu.Write(uint32(physAddr), uint32(value))
+	cpu.MemoryController.Write(uint32(physAddr), uint32(value))
 
 	logger.Log.Println(physAddr)
 	logger.Log.Println(value)
@@ -366,7 +367,7 @@ func pop(cpu *CPU) {
 		go cpu.InterruptHandler(cpu)
 		return
 	}
-	value, err := cpu.mmu.Read(uint32(physAddr))
+	value, err := cpu.MemoryController.Read(uint32(physAddr))
 	if err != nil {
 		logger.Log.Printf("ERROR: pop() %s", err)
 	}
@@ -388,12 +389,13 @@ func pop(cpu *CPU) {
 }
 
 // Initialize the CPU with default values
-func NewCPU(mmu *memory.MMU) *CPU {
+func NewCPU(mmu *memory.MMU, memoryController *memory.MemoryController) *CPU {
 	logger.Log.Println("INFO: CPU New()")
 	cpu := &CPU{
-		opcodes:        make(map[int]func(*CPU)),
-		mmu:            mmu,
-		PauseWaitGroup: new(sync.WaitGroup),
+		opcodes:          make(map[int]func(*CPU)),
+		mmu:              mmu,
+		PauseWaitGroup:   new(sync.WaitGroup),
+		MemoryController: memoryController,
 	}
 
 	// Adds default instructions to opcodes

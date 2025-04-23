@@ -17,7 +17,7 @@ var selectedProcess *processes.PCB
 var virtualPagesListView *widget.List
 var virtualPagesListViewContainer *container.Scroll
 var virtualPagesEntriesView *widget.List
-var listOfMemoryFrames [][]uint32
+var listOfMemoryFrames map[int][]uint32
 var pageInfoLabel *widget.Label
 
 // Function to create the PCB UI
@@ -62,10 +62,12 @@ func CreatePCBUI(os *os.OS, processTable *processes.ProcessTable) fyne.CanvasObj
 	virtualPagesListViewContainer.SetMinSize(fyne.NewSize(400, 300))
 	// Handle selection
 	processListWidget.OnSelected = func(id widget.ListItemID) {
+		logger.Log.Println("Selected process ID:", id)
 		keys := getProcessKeys(*processTable)
 		selectedProcess = (processTable.ProcessMap)[keys[id]]
 		infoLabel.SetText(formatPCBDetails(selectedProcess))
 		updateVirtualPagesListView(os)
+
 	}
 
 	// Auto-refresh mechanism
@@ -132,22 +134,21 @@ func updateVirtualPagesListView(os *os.OS) {
 	}
 
 	// Clear previous memory frames
-	listOfMemoryFrames = nil
+	listOfMemoryFrames = make(map[int][]uint32)
 
 	// Create a list of virtual page numbers (VPN)
 	vpnList := []uint32{}
 	for i := 0; i < selectedProcess.PageAmount; i++ {
 		entry := selectedProcess.PageTable.Entries[i]
 		vpnList = append(vpnList, uint32(entry.FrameNumber))
-	}
-	logger.Log.Println("vpnList:", vpnList)
-
-	// Map VPN to memory frames (if any)
-	for _, vpn := range vpnList {
-		if vpn < uint32(len(os.Memory.Frames)) { // Ensure the frame exists
-			listOfMemoryFrames = append(listOfMemoryFrames, os.Memory.Frames[vpn])
+		if entry.Valid == false {
+			continue // Skip invalid entries
 		}
+		listOfMemoryFrames[i] = os.Memory.Frames[entry.FrameNumber] // Get the memory frame for the entry
+		// Append the frame number to the list
+
 	}
+
 	logger.Log.Println("listOfMemoryFrames:", len(listOfMemoryFrames))
 
 	// Initialize virtualPagesEntriesView (List of entries within selected frame)
@@ -155,7 +156,7 @@ func updateVirtualPagesListView(os *os.OS) {
 		func() int {
 			if len(listOfMemoryFrames) > 0 {
 				// Return the number of entries in the selected memory frame
-				return len(listOfMemoryFrames[0]) // Assuming the first frame is selected
+				return len(vpnList) // Assuming the first frame is selected
 			}
 			return 0 // No entries if no memory frames
 		},
@@ -164,7 +165,7 @@ func updateVirtualPagesListView(os *os.OS) {
 		},
 		func(i widget.ListItemID, obj fyne.CanvasObject) {
 			if len(listOfMemoryFrames) > 0 {
-				selectedFrame := listOfMemoryFrames[0] // Use the first frame for simplicity
+				selectedFrame := listOfMemoryFrames[0]
 				// Update the label with the entry data
 				obj.(*widget.Label).SetText(fmt.Sprintf("Entry: %d", selectedFrame[i])) // Display each entry
 			}
@@ -184,7 +185,13 @@ func updateVirtualPagesListView(os *os.OS) {
 
 	// Handle selection in the virtualPagesListView
 	virtualPagesListView.OnSelected = func(id widget.ListItemID) {
+		logger.Log.Println("Selected VPN:", id)
 		// When an item is selected, get the memory frame details
+		if selectedProcess.PageTable.Entries[id].Valid == false {
+			pageInfoLabel.SetText(fmt.Sprintf("Selected Page is not valid \n Either not allocated or is a guard page."))
+			return
+
+		}
 		selectedFrame := listOfMemoryFrames[id]
 		// Show details of the selected memory frame
 		logger.Log.Println("Selected Memory Frame:", selectedFrame)

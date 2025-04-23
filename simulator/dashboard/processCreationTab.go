@@ -4,6 +4,8 @@ import (
 	"CPU-Simulator/simulator/pkg/cpu"
 	"CPU-Simulator/simulator/pkg/os"
 	"fmt"
+	"log"
+	OS "os"
 	"strconv"
 
 	"fyne.io/fyne/v2"
@@ -67,7 +69,7 @@ func ProcessCreationTab(os *os.OS) fyne.CanvasObject {
 	createProcessButton := widget.NewButton("Create Process", func() {
 		processName := processNameEntry.Text
 		if processName != "" && len(*os.ProcessController.InstructionList) > 0 {
-			pcb := os.ProcessController.CreateProcessFromInstructionList(processName)
+			pcb := os.ProcessController.CreateProcessFromInstructionList(processName, false)
 			os.AddProcessToSchedulerQueue(pcb)
 			processNameEntry.SetText("")
 			updateInstructionList()
@@ -100,7 +102,7 @@ func ProcessCreationTab(os *os.OS) fyne.CanvasObject {
 	)
 	gap := widget.NewLabel("")
 
-	return container.NewVBox(
+	manualContainer := container.NewVBox(
 		topContainer,
 		addButton,
 		gap,
@@ -110,4 +112,48 @@ func ProcessCreationTab(os *os.OS) fyne.CanvasObject {
 		deleteInstructionListButton,
 		instructionListContainer,
 	)
+
+	// Create tab file-based process creation
+
+	// Define the relative path from the Dashboard to the processFiles folder
+	processFilesDir := "simulator/pkg/processes/processFiles"
+
+	// Read all files from the directory
+	files, err := OS.ReadDir(processFilesDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Iterate through files and create a list of filenames
+	var fileNames []string
+	for _, file := range files {
+		if !file.IsDir() {
+			fileNames = append(fileNames, file.Name())
+		}
+	}
+
+	processFilesSelect := widget.NewSelect(fileNames, nil)
+	processFilesSelect.PlaceHolder = "File"
+
+	createProcessButtonFromFile := widget.NewButton("Create Process", func() {
+		processFile := processFilesSelect.Selected
+		pcb := os.ProcessController.CreateProcessFromFile(processFile)
+		os.AddProcessToSchedulerQueue(pcb)
+		processNameEntry.SetText("")
+		updateInstructionList()
+
+	})
+
+	fromFileContainer := container.NewVBox(
+		processFilesSelect,
+		createProcessButtonFromFile,
+	)
+
+	tabs := container.NewAppTabs(
+		container.NewTabItem("Manual", manualContainer),
+		container.NewTabItem("From File", fromFileContainer),
+	)
+	tabs.SetTabLocation(container.TabLocationLeading)
+
+	return tabs
 }

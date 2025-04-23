@@ -1,9 +1,10 @@
-package scheduler
+package schedulerFiles
 
 import (
 	"CPU-Simulator/simulator/pkg/bindings"
 	"CPU-Simulator/simulator/pkg/logger"
 	"CPU-Simulator/simulator/pkg/processes"
+	"CPU-Simulator/simulator/pkg/scheduler"
 )
 
 type FifoScheduler struct {
@@ -19,19 +20,22 @@ func NewScheduler() *FifoScheduler {
 
 func (s *FifoScheduler) AddProcess(pcb *processes.PCB) {
 	logger.Log.Printf("DEBUGGING: Addprocess: pcb: %d", pcb)
-	logger.Log.Printf("DEBUGGING: ReadyeQueueLEngth:  %d", len(s.readyQueue))
 	s.readyQueue = append(s.readyQueue, pcb)
-	logger.Log.Printf("DEBUGGING: ReadyeQueueLEngth:  %d", len(s.readyQueue))
-	SyncReadyQueue(s.readyQueue)
+	syncReadyQueue(s.readyQueue)
 }
 
 func (s *FifoScheduler) GetNextProcess() *processes.PCB {
 	if len(s.readyQueue) == 0 {
 		return nil
 	}
+	if s.currentPCB != nil {
+		if s.currentPCB.State != processes.Terminated {
+			s.AddProcess(s.currentPCB) // Re-add the current process to the end of the queue
+		}
+	}
 	s.currentPCB = s.readyQueue[0]
 	s.readyQueue = s.readyQueue[1:] // Remove first process (FIFO scheduling)
-	SyncReadyQueue(s.readyQueue)
+	syncReadyQueue(s.readyQueue)
 	return s.currentPCB
 }
 
@@ -44,10 +48,14 @@ func (s *FifoScheduler) GetReadyQueue() []*processes.PCB {
 }
 
 // Syncs the bound list with cpu.ReadyQueue
-func SyncReadyQueue(readyQueue []*processes.PCB) {
+func syncReadyQueue(readyQueue []*processes.PCB) {
 	var tempList []interface{}
 	for _, pcb := range readyQueue {
 		tempList = append(tempList, pcb) // Convert []*PCB to []interface{}
 	}
 	bindings.ReadyQueueBinding.Set(tempList) // Update binding list
+}
+
+func init() {
+	scheduler.RegisterScheduler("FiFo", func() scheduler.SchedulerInterface { return &FifoScheduler{} })
 }
