@@ -3,6 +3,7 @@ package dashboard
 import (
 	"CPU-Simulator/simulator/pkg/logger"
 	"CPU-Simulator/simulator/pkg/os"
+	"CPU-Simulator/simulator/pkg/systemLog"
 	"CPU-Simulator/simulator/pkg/systemState"
 	"fmt"
 	"time"
@@ -14,14 +15,19 @@ import (
 )
 
 type DashboardStruct struct {
-	SystemState systemState.State
-	IsRunnning  bool
-	clock       int // In seconds
+	SystemState    *systemState.State
+	SystemStateLog *systemLog.SystemStateLog
+	IsRunnning     bool
+	IsStopping     bool
+	clock          int // In seconds
 }
 
 func (dash *DashboardStruct) startClock(clock *widget.Label) {
 	dash.clock = 0
 	for {
+		if dash.IsStopping {
+			return
+		}
 		time.Sleep(1000 * time.Millisecond)
 		if !dash.IsRunnning {
 			fmt.Println("Clock paused.")
@@ -43,8 +49,6 @@ func Dashboard(dash *DashboardStruct) {
 	myWindow.Resize(fyne.NewSize(800, 600))
 
 	os := os.NewOS()
-	go os.TestNumer()
-	//var cpuInstance = os.CPU[0]
 
 	clock := widget.NewLabel("00:00:00")
 	status := widget.NewLabel("Not Running")
@@ -52,6 +56,26 @@ func Dashboard(dash *DashboardStruct) {
 	var scheduler *container.TabItem
 
 	startSimulationButton := widget.NewButton("Start", func() {
+		if len(os.ProcessTable.ProcessMap) == 0 {
+			logger.Log.Println("INFO: dashboard_Dashboard() - No processes to run.")
+			return
+		}
+		logger.Log.Println("INFO: dashboard_Dashboard() - Start button pressed.")
+		logger.Log.Println("INFO: StopState: %d", dash.SystemStateLog.StopState)
+
+		if dash.SystemStateLog.StopState {
+			logger.Log.Println("INFO: dashboard_Dashboard() - Starting new SystemStateLog.")
+			systemState := systemState.CreateState()
+			dash.SystemState = systemState
+
+			systemStateLog := systemLog.NewSystemStateLog(dash.SystemState.PubSub)
+			dash.SystemState = systemState
+			dash.SystemStateLog = systemStateLog
+			logger.Log.Println("INFO: dashboard_Dashboard() - Starting new SystemStateLog.")
+			go dash.SystemStateLog.LogSystemState()
+		}
+		dash.IsStopping = false
+
 		if dash.IsRunnning {
 			return
 		}
@@ -65,8 +89,14 @@ func Dashboard(dash *DashboardStruct) {
 	})
 
 	stopSimulationButton := widget.NewButton("Stop", func() {
-		status.SetText("Not Running")
+		if !dash.IsRunnning {
+			return
+		}
+		status.SetText("Stopped")
+		dash.SystemStateLog.StopChan <- true
 		os.StopSimulation()
+		dash.IsRunnning = false
+		dash.IsStopping = true
 	})
 
 	resumetSimulationButton := widget.NewButton("Resume", func() {
@@ -130,9 +160,7 @@ func Dashboard(dash *DashboardStruct) {
 		main,
 		cpu,
 		memory,
-		processes, // Todo: Implement processes tab
-		// Den skal inneholde en liste over alle prosessene som kjører, og informasjon om hver enkelt prosess.
-		// Som Pages, og memoriet til den.
+		processes,
 		scheduler,
 		calculator,
 		processCreation,

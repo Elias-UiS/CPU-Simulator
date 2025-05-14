@@ -32,8 +32,7 @@ func (pubSub *PubSub[T]) Publish(value T) {
 	pubSub.Mu.RLock()
 	defer pubSub.Mu.RUnlock()
 
-	for i, channel := range pubSub.Subscribers {
-		logger.Log.Println("INFO: Publish()", i)
+	for _, channel := range pubSub.Subscribers {
 		channel <- value
 	}
 }

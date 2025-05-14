@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"CPU-Simulator/simulator/pkg/cpu"
+	"CPU-Simulator/simulator/pkg/logger"
 	"CPU-Simulator/simulator/pkg/os"
 	"fmt"
 	"log"
@@ -137,10 +138,15 @@ func ProcessCreationTab(os *os.OS) fyne.CanvasObject {
 
 	createProcessButtonFromFile := widget.NewButton("Create Process", func() {
 		processFile := processFilesSelect.Selected
-		pcb := os.ProcessController.CreateProcessFromFile(processFile)
-		os.AddProcessToSchedulerQueue(pcb)
-		processNameEntry.SetText("")
-		updateInstructionList()
+		if processFile != "" {
+			logger.Log.Println("INFO: dashboard_ProcessCreationTab() - Process Name: %s", processFile)
+			pcb := os.ProcessController.CreateProcessFromFile(processFile)
+			if os.OsIsRunning {
+				os.AddProcessToSchedulerQueue(pcb)
+			}
+			processNameEntry.SetText("")
+			updateInstructionList()
+		}
 
 	})
 

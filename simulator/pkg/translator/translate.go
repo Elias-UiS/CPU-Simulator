@@ -33,9 +33,3 @@ func FindNextInstructionAddress(memType int, pc int) int {
 		return pc
 	}
 }
-
-// TODO: Implement this function
-// func TranslateInstructionIntToInstruction(intructionValue int) (int, string, int) {
-
-// 	return int(vpn), int(offset)
-// }

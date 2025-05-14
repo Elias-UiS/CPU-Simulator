@@ -107,6 +107,8 @@ type CPU struct {
 	PauseWaitGroup   *sync.WaitGroup               // To let the cpu wait for the OnCycle function to finish.
 	InterruptCode    int                           // Interrupt code to be used by the OS
 	MemoryController *memory.MemoryController      // Memory controller to access memory
+	StopCPU          bool                          // Flag to stop the CPU
+	StopWaitGroup    *sync.WaitGroup
 }
 
 // Register a new opcode
@@ -395,6 +397,7 @@ func NewCPU(mmu *memory.MMU, memoryController *memory.MemoryController) *CPU {
 		opcodes:          make(map[int]func(*CPU)),
 		mmu:              mmu,
 		PauseWaitGroup:   new(sync.WaitGroup),
+		StopWaitGroup:    new(sync.WaitGroup),
 		MemoryController: memoryController,
 	}
 
@@ -417,6 +420,11 @@ func (cpu *CPU) Run() {
 	logger.Log.Println("INFO: CPU Run()")
 
 	for {
+		if cpu.StopCPU {
+			logger.Log.Println("INFO: CPU Run() - Stop signal received, exiting.")
+			cpu.StopWaitGroup.Done()
+			break
+		}
 		if len(cpu.mmu.PageTable.Entries) == 0 {
 			logger.Log.Println("No page table found")
 			time.Sleep(1000 * time.Millisecond)
@@ -442,6 +450,7 @@ func (cpu *CPU) Run() {
 			cpu.Pause()
 			go cpu.EventHandler(cpu) // Notify the OS about the cycle
 		}
+
 	}
 }
 
@@ -455,4 +464,12 @@ func (cpu *CPU) Resume() {
 	logger.Log.Println("Resuming +1")
 	cpu.IsPaused = false
 	cpu.PauseWaitGroup.Done()
+}
+
+func (cpu *CPU) Stop() bool {
+	logger.Log.Println("INFO: CPU Stop()")
+	cpu.StopCPU = true
+	cpu.StopWaitGroup.Add(1)
+	cpu.StopWaitGroup.Wait()
+	return true
 }

@@ -10,7 +10,6 @@ type ErrorStruct struct {
 	VPN  int
 }
 type MMU struct {
-	TLB       int        // doesnt store int, only temp. cache
 	PageTable *PageTable // Pages for the cpu
 	memory    *Memory
 }
@@ -102,7 +101,6 @@ func (mmu *MMU) TranslateAddress(virtualAddr uint32) (int, *ErrorStruct) {
 
 func NewMMU(mem *Memory) *MMU {
 	mmu := &MMU{
-		TLB: settings.NumFrames,
 		PageTable: &PageTable{
 			Entries: make(map[int]*PTE),
 		},

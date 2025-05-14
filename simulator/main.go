@@ -14,7 +14,8 @@ func main() {
 	systemStateLog := systemLog.NewSystemStateLog(systemState.PubSub)
 	go systemStateLog.LogSystemState()
 	dashboardStruct := dashboard.DashboardStruct{
-		SystemState: *systemState,
+		SystemState:    systemState,
+		SystemStateLog: systemStateLog,
 	}
 	dashboard.Dashboard(&dashboardStruct)
 }

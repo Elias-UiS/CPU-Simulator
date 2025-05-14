@@ -9,8 +9,10 @@ import (
 	"time"
 )
 
-type systemStateLog struct {
-	PubSub *systemState.PubSub[systemState.State]
+type SystemStateLog struct {
+	PubSub    *systemState.PubSub[systemState.State]
+	StopChan  chan bool
+	StopState bool
 }
 
 // data := systemState.State{Name: "Active", Age: 30}
@@ -20,28 +22,40 @@ type systemStateLog struct {
 // }
 // fmt.Println(string(jsonData))
 
-func NewSystemStateLog(pubSub *systemState.PubSub[systemState.State]) *systemStateLog {
-	systemStateLog := &systemStateLog{
-		PubSub: pubSub,
+func NewSystemStateLog(pubSub *systemState.PubSub[systemState.State]) *SystemStateLog {
+	stopChan := make(chan bool)
+	systemStateLog := &SystemStateLog{
+		PubSub:    pubSub,
+		StopChan:  stopChan,
+		StopState: false,
 	}
 	return systemStateLog
 }
 
-func (log systemStateLog) LogSystemState() {
-	timestamp := time.Now().Format("20060102_150405")
-	filename := fmt.Sprintf("logStateFiles/state_%s.json", timestamp)
-	file, err := os.Create(filename)
-	if err != nil {
-		return
-	}
-	defer file.Close()
-
-	channel := log.PubSub.Subscribe()
-	var state systemState.State
+func (log *SystemStateLog) LogSystemState() {
 	for {
-		state = <-channel
-		logger.Log.Println(state)
-		writeToFile(file, state)
+		timestamp := time.Now().Format("20060102_150405")
+		filename := fmt.Sprintf("logStateFiles/state_%s.json", timestamp)
+		file, err := os.Create(filename)
+		if err != nil {
+			return
+		}
+		defer file.Close()
+
+		channel := log.PubSub.Subscribe()
+		var state systemState.State
+		for {
+			select {
+			case <-log.StopChan:
+				log.StopState = true
+				logger.Log.Println("INFO: LogSystemState() - Stop signal received, exiting.")
+				return
+			case state = <-channel:
+				logger.Log.Println(state)
+				writeToFile(file, state)
+			}
+
+		}
 	}
 }
 

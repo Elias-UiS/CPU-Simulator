@@ -14,9 +14,6 @@ type PTE struct { // Page table entry
 	Valid       bool // Page is mapped or not
 	FrameNumber int  // Physical frame number
 	Type        PageType
-	//Dirty       bool   // Modified flag
-	//Referenced  bool   // Recently accessed flag
-	//SwapLoc     uint32 // Location on disk if swapped
 }
 
 type PageTable struct {

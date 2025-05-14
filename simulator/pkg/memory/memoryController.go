@@ -17,6 +17,8 @@ func (memoryController *MemoryController) Read(physicalAddr uint32) (int, error)
 	if offset < 0 || offset >= settings.PageSize {
 		err := fmt.Errorf("ERROR: memoryController_Read() | offset: address out of bounds")
 		logger.Log.Println(err)
+		logger.Log.Println("Offset: %d", offset)
+		logger.Log.Println("PFN: %d", pfn)
 		return -1, err
 	}
 

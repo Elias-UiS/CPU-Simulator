@@ -22,13 +22,13 @@ type OS struct {
 	FreeList          *memory.FreeList
 	ProcessController *Controller
 	Scheduler         scheduler.SchedulerInterface
-	osIsRunning       bool
+	OsIsRunning       bool
 	cpuIsRunning      bool
-	Test              int
 	StepMode          bool
 	MidContextSwitch  bool
 	OSMutex           sync.RWMutex
 	MemoryController  *memory.MemoryController
+	Stopping          bool
 }
 
 func NewOS() *OS {
@@ -61,38 +61,30 @@ func NewOS() *OS {
 		ProcessTable:      processTableStruct,
 		FreeList:          freeList,
 		ProcessController: controller,
-		osIsRunning:       false,
+		OsIsRunning:       false,
 		cpuIsRunning:      false,
 		Scheduler:         scheduler,
-		Test:              10,
 		StepMode:          false,
 		MemoryController:  memoryController,
 	}
 }
 
 func (os *OS) StartSimulation() {
-	if os.osIsRunning {
+	if !os.Stopping {
+		for _, value := range os.ProcessTable.ProcessMap {
+			os.Scheduler.AddProcess(value)
+			value.Metrics.ArrivalTime = time.Now()
+		}
+	}
+	os.Stopping = false
+	if os.OsIsRunning {
 		return
 	}
 	logger.Log.Println("Starting simulation...")
-	os.osIsRunning = true
+	os.OsIsRunning = true
 
 	os.CPU[0].PageFaultHandler = os.PageFaultHandler
 	os.CPU[0].InterruptHandler = os.InterruptHandler
-
-	pcb := os.ProcessController.MakeTestProcessBasic()
-	pcb2 := os.ProcessController.MakeTestProcessBasic2()
-	pcb3 := os.ProcessController.MakeTestProcessBasic3()
-	pcb4 := os.ProcessController.MakeTestProcessStackBasic()
-
-	// os.AddProcessToProcessTable(pcb)
-	// os.AddProcessToProcessTable(pcb2)
-	// os.AddProcessToProcessTable(pcb3)
-
-	os.AddProcessToSchedulerQueue(pcb)
-	os.AddProcessToSchedulerQueue(pcb2)
-	os.AddProcessToSchedulerQueue(pcb3)
-	os.AddProcessToSchedulerQueue(pcb4)
 
 	logger.Log.Println(os.Scheduler)
 	nextPcb := os.Scheduler.GetNextProcess()
@@ -119,17 +111,15 @@ func (os *OS) PauseSimulation() {
 }
 
 func (os *OS) ResumeSimulation() {
+
 	if os.cpuIsRunning {
 		return
 	}
 
-	logger.Log.Println("Testing bug here")
 	fmt.Println("Resuming simulation...")
 	for i := range len(os.CPU) {
-		logger.Log.Println("Testing bug here 2")
 		os.CPU[i].Resume()
 	}
-	logger.Log.Println("Testing bug here 3")
 	if os.Scheduler.GetRunningProcess().Metrics.CpuStartTime.IsZero() {
 
 		os.Scheduler.GetRunningProcess().Metrics.CpuStartTime = time.Now()
@@ -138,11 +128,13 @@ func (os *OS) ResumeSimulation() {
 	os.UpdateMetricsResume()
 }
 
-// TODO
 func (os *OS) StopSimulation() {
-
 	fmt.Println("Stopping simulation...")
-	//os.CPU.Stop()5
+	os.Stopping = true
+	done := os.CPU[0].Stop()
+	logger.Log.Println("CPU stopped:", done)
+	os.Reset()
+
 }
 
 func (os *OS) Reset() {
@@ -150,8 +142,15 @@ func (os *OS) Reset() {
 	// Reset memory, MMU, CPU, and free list
 	os.Memory = memory.NewMemory()
 	os.MMU = memory.NewMMU(os.Memory)
-	os.CPU = []*cpu.CPU{cpu.NewCPU(os.MMU, os.MemoryController)}
+	newMemoryController := memory.NewMemoryController(os.Memory)
+	newCpuInstance := cpu.NewCPU(os.MMU, newMemoryController)
+	os.Scheduler = schedulerFiles.NewScheduler()
+	os.ProcessTable = processes.CreateProcessTable()
 	os.FreeList = memory.NewFreeList()
+	os.ProcessController = createController(os.MMU, os.FreeList, os.ProcessTable, newMemoryController)
+	os.CPU = []*cpu.CPU{newCpuInstance}
+	os.OsIsRunning = false
+	fmt.Println("Finished resetting OS")
 }
 
 func (os *OS) ContextSwitch(cpu *cpu.CPU) {
@@ -161,9 +160,6 @@ func (os *OS) ContextSwitch(cpu *cpu.CPU) {
 		cpu.Pause()
 	}
 
-	for i := range os.Scheduler.GetReadyQueue() {
-		logger.Log.Println("Ready Queue list 1: ", os.Scheduler.GetReadyQueue()[i].Pid)
-	}
 	currentProcess := os.Scheduler.GetRunningProcess()
 
 	logger.Log.Printf("currentProcess.Pid: %d", currentProcess.Pid)
@@ -182,25 +178,14 @@ func (os *OS) ContextSwitch(cpu *cpu.CPU) {
 	if currentProcess.State != processes.Terminated {
 		currentProcess.State = processes.Ready
 	}
-	for i := range os.Scheduler.GetReadyQueue() {
-		logger.Log.Println("Ready Queue list 2: ", os.Scheduler.GetReadyQueue()[i].Pid)
-	}
 	nextProcess := os.Scheduler.GetNextProcess()
-	for i := range os.Scheduler.GetReadyQueue() {
-		logger.Log.Println("Ready Queue list 3: ", os.Scheduler.GetReadyQueue()[i].Pid)
-	}
-	logger.Log.Printf("Info: IsTerminated Check: %d", currentProcess.State)
 
 	if nextProcess == nil {
 		logger.Log.Println("No processes in the ready queue.")
 		os.MidContextSwitch = false
 		return
 	}
-	logger.Log.Printf("nextProcess.Pid: %d", nextProcess.Pid)
 	logger.Log.Println("Context switching from process", currentProcess.Pid)
-	for i := range os.Scheduler.GetReadyQueue() {
-		logger.Log.Println("Ready Queue list 4: ", os.Scheduler.GetReadyQueue()[i].Pid)
-	}
 	logger.Log.Println("Context switching to process", nextProcess.Pid)
 	os.SaveProcessState(currentProcess, cpu) // Saves the process state of pcb from cpu to pcb..
 	os.ProcessController.SetPageTabletoMMU(nextProcess)
@@ -212,19 +197,15 @@ func (os *OS) ContextSwitch(cpu *cpu.CPU) {
 	if nextProcess.Metrics.ResponseTime == 0 {
 		nextProcess.Metrics.ResponseTime = time.Now().Sub(nextProcess.Metrics.ArrivalTime)
 	}
-	logger.Log.Println("Testing Step 1")
 	if os.cpuIsRunning {
 		nextProcess.Metrics.CpuStartTime = time.Now()
 		nextProcess.Metrics.WaitingTime += time.Now().Sub(nextProcess.Metrics.WaitingStartTime)
 		cpu.InstructionCount = 0
-		logger.Log.Println("Testing Step 2")
 		if !os.StepMode {
 			cpu.Resume()
-			logger.Log.Println("Testing Step 3")
 		}
 	}
 	os.MidContextSwitch = false
-	logger.Log.Println("Testing Step 4")
 
 }
 
@@ -301,16 +282,12 @@ func (os *OS) AddProcessToSchedulerQueue(pcb *processes.PCB) {
 	pcb.Metrics.ArrivalTime = time.Now()
 }
 
-func (os *OS) TestNumer() {
-	for {
-		os.Test += 1
-		bindings.SharedValue.Set(os.Test)
-		time.Sleep(500 * time.Millisecond)
-	}
-}
-
 func (os *OS) OnCPUCycle(cpu *cpu.CPU) {
 	// This is run after every CPU cycle. The os can decide whether to intervene
+	if os.Stopping {
+		logger.Log.Println("Stop OnCPUCycle, simulation stopping.")
+		return
+	}
 	pcb := os.Scheduler.GetRunningProcess()
 	pcb.Metrics.InstructionAmount += 1
 	logger.Log.Println("OS: CPU cycle completed.")
@@ -324,11 +301,26 @@ func (os *OS) OnCPUCycle(cpu *cpu.CPU) {
 		os.ContextSwitch(cpu)
 	}
 	instruction, err := os.MemoryController.Read(uint32(phys))
+
+	pc2 := cpu.Registers.PC + 1
+	phys2, errStruct := os.MMU.TranslateAddress(uint32(pc2))
+	if errStruct != nil {
+		logger.Log.Println("Error: OS | OnCPUCycle | TranslateAddress\n", errStruct.Text)
+		pcb.State = processes.Terminated
+		cpu.Pause()
+		os.ContextSwitch(cpu)
+	}
+	instruction2, err := os.MemoryController.Read(uint32(phys2))
 	if err != nil {
 		logger.Log.Println("Error: OS | OnCPUCycle | Read\n", err)
+		pcb.State = processes.Terminated
+		logger.Log.Println("OS: Process terminated.")
+		cpu.InstructionCount = 0
+		cpu.Pause()
+		os.ContextSwitch(cpu)
 		return
 	}
-	if instruction == 0 {
+	if instruction == 0 && instruction2 == 0 {
 		pcb.State = processes.Terminated
 		logger.Log.Println("OS: Process terminated.")
 		cpu.InstructionCount = 0

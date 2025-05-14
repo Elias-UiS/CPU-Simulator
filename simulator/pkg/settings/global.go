@@ -10,5 +10,5 @@ const (
 	MemType    = 0                    // 0 = paging,
 )
 
-var CpuFetchDecodeExecuteDelay time.Duration = 100 // Delay between the cycle steps, in milliseconds.
+var CpuFetchDecodeExecuteDelay time.Duration = 333 // Delay between the cycle steps, in milliseconds.
 var InstructionLimitPerRun int = 100               // How many instructions a process gets before a context switch.
